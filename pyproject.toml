@@ -4,8 +4,9 @@ version = "0.1.0"
 description = "LLM Development Pipeline UI - GitHub Actions-style visual dashboard for LLM-driven workflows"
 requires-python = ">=3.13"
 dependencies = [
-    "langflow>=1.8.0rc2",
-    "openai>=1.109.1",
-    "pygithub>=2.8.1",
     "python-dotenv>=1.2.2",
+    "textual>=8.1.1",
 ]
+
+[project.scripts]
+pipeline = "app.tui:main"
