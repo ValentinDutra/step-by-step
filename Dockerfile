@@ -1,17 +1,21 @@
-FROM langflowai/langflow:latest
+FROM python:3.13-slim
 
-# Copy custom components
-COPY components/ /app/components/
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy flow definitions
-COPY flows/ /app/flows/
+WORKDIR /app
 
-# Copy prompt templates
-COPY prompts/ /app/prompts/
+# Copy project files
+COPY pyproject.toml uv.lock ./
+COPY components/ ./components/
+COPY flows/ ./flows/
+COPY prompts/ ./prompts/
+
+# Install dependencies
+RUN uv sync --frozen --no-dev
 
 # Environment variables (override at runtime)
 ENV LANGFLOW_SECRET_KEY=${LANGFLOW_SECRET_KEY}
 
 EXPOSE 7860
 
-CMD ["langflow", "run", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uv", "run", "langflow", "run", "--host", "0.0.0.0", "--port", "7860"]
