@@ -6,9 +6,6 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-# Activate virtual environment
-source langflow-env/bin/activate
-
 # Load environment variables
 if [ -f .env ]; then
     set -a
@@ -16,5 +13,5 @@ if [ -f .env ]; then
     set +a
 fi
 
-# Start Langflow
-langflow run --port 7860
+# Start Langflow via uv
+uv run langflow run --port 7860

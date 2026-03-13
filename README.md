@@ -18,19 +18,17 @@ Task Prompt --> Code Gen Prompt --> Code LLM --> Code Output
 
 ## Prerequisites
 
-- Python 3.10+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) (install: `curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - API keys: OpenAI (or compatible), GitHub PAT
 - 8GB RAM minimum
 
 ## Quick Start
 
 ```bash
-# 1. Clone and setup
+# 1. Clone and install
 git clone <repo-url> && cd step-by-step
-python3.13 -m venv langflow-env
-source langflow-env/bin/activate
-pip install langflow --pre --force-reinstall
-pip install openai PyGithub
+uv sync
 
 # 2. Configure
 cp .env.example .env
@@ -41,7 +39,7 @@ cp .env.example .env
 # Open http://localhost:7860
 
 # 4. Import flow
-python scripts/setup_flow.py
+uv run python scripts/setup_flow.py
 ```
 
 ## Project Structure
@@ -64,9 +62,10 @@ python scripts/setup_flow.py
 │   ├── export_flow.sh   # Backup flow
 │   ├── test_components.py  # Offline tests
 │   └── test_pipeline.py    # E2E API tests
+├── pyproject.toml       # uv project config & dependencies
+├── uv.lock              # Locked dependency versions
 ├── Dockerfile
-├── docker-compose.yml
-└── requirements.txt
+└── docker-compose.yml
 ```
 
 ## Pipeline Nodes
@@ -88,10 +87,10 @@ After clicking "Serve" in Langflow:
 
 ```bash
 # List flows
-python scripts/serve_api.py --list-flows
+uv run python scripts/serve_api.py --list-flows
 
 # Run pipeline
-python scripts/serve_api.py "Implement POST /login endpoint with JWT"
+uv run python scripts/serve_api.py "Implement POST /login endpoint with JWT"
 
 # Or via curl
 curl -X POST http://localhost:7860/api/v1/run/{flow_id} \
@@ -110,10 +109,10 @@ docker compose up -d
 
 ```bash
 # Offline component tests (no server needed)
-python scripts/test_components.py
+uv run python scripts/test_components.py
 
 # E2E tests (server must be running)
-python scripts/test_pipeline.py
+uv run python scripts/test_pipeline.py
 ```
 
 ## Configuration
