@@ -1,0 +1,14 @@
+Previous code generated:
+{{"Code Output"}}
+
+Write comprehensive unit/integration tests for this exact code.
+Use Jest (Node.js) or pytest (Python). Cover edge cases, errors, happy paths, and boundary conditions.
+
+Output ONLY test files in markdown code blocks with file paths:
+
+Example format:
+```
+tests/filename.test.js
+```js
+// tests
+```
