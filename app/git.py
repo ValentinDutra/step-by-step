@@ -29,6 +29,39 @@ async def _gh(working_dir: str, *args: str) -> tuple[int, str, str]:
     return proc.returncode, out.decode().strip(), err.decode().strip()
 
 
+async def create_branch(
+    prompt: str,
+    working_dir: str,
+    on_log=None,
+) -> str:
+    """Ask Claude to pick a branch name based on the task and create it."""
+    branch_prompt = (
+        "Given the following task, output ONLY a git branch name — no explanation, no punctuation, nothing else.\n"
+        "Rules:\n"
+        "- Format: type/short-kebab-description\n"
+        "- type: feat, fix, docs, refactor, test, or chore\n"
+        "- Max 50 chars total, lowercase, hyphens only (no extra slashes)\n"
+        "- Example: feat/add-user-authentication\n\n"
+        f"TASK: {prompt}"
+    )
+
+    success, output, _ = await call_claude(branch_prompt, working_dir)
+    if not success:
+        return ""
+
+    branch_name = output.strip().strip("`").split("\n")[0].strip()
+
+    rc, _, err = await _git(working_dir, "checkout", "-b", branch_name)
+    if rc != 0:
+        if on_log:
+            on_log(f"git checkout -b failed: {err}")
+        return ""
+
+    if on_log:
+        on_log(f"branch: {branch_name}")
+    return branch_name
+
+
 async def run_commit_pr_stage(
     stage: Stage,
     prompt: str,

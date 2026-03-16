@@ -19,7 +19,7 @@ from textual import work
 from textual.widgets import Label, RichLog, TextArea
 
 from app.agents import Task, decompose_task
-from app.git import run_commit_pr_stage
+from app.git import create_branch, run_commit_pr_stage
 from app.models import pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
 from app.stages import StageStatus, create_stages
@@ -57,6 +57,17 @@ class PipelineRunnerMixin:
         self._clear_stream()
         self._set_stream_header("Pipeline started…")
         self._write_log(f"[bold]Pipeline started:[/bold] {prompt}\n")
+
+        self._write_log("[bold yellow]▶ Creating branch…[/bold yellow]")
+        branch_name = await create_branch(
+            prompt,
+            self.working_dir,
+            on_log=lambda msg: self._write_log(f"  [dim]{msg}[/dim]"),
+        )
+        if branch_name:
+            self._write_log(f"[green]✓ Branch:[/green] [bold]{branch_name}[/bold]\n")
+        else:
+            self._write_log("[yellow]⚠ Branch creation skipped[/yellow]\n")
 
         prev_output = ""
         iteration = 0
