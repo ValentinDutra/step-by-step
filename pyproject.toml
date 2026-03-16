@@ -1,0 +1,19 @@
+[project]
+name = "step-by-step"
+version = "0.1.0"
+description = "LLM Development Pipeline UI - GitHub Actions-style visual dashboard for LLM-driven workflows"
+requires-python = ">=3.13"
+dependencies = [
+    "python-dotenv>=1.2.2",
+    "textual>=8.1.1",
+]
+
+[project.scripts]
+pipeline = "app.tui:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

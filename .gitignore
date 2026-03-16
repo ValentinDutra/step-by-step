@@ -4,10 +4,10 @@
 skills-lock.json
 
 # Python
-langflow-env/
 __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
 dist/
 build/
+.venv/
