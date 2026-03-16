@@ -1,0 +1,18 @@
+You are expert software engineer. Generate clean, production-ready code for this task:
+
+TASK: {{"Task Prompt"}}
+
+Repo context: Assume Node.js/Express project with standard structure.
+Output ONLY the code files to create/modify, using markdown code blocks with file paths.
+
+Example format:
+```
+src/filename.js
+```js
+// code here
+```
+
+tests/filename.test.js
+```js
+// tests here
+```
