@@ -1,7 +1,7 @@
 """Pipeline stage runners."""
 
 from app.agents import Task, call_claude, run_workers_parallel, aggregate_results
-from app.stages import Stage, StageStatus, MAX_CONCURRENT_WORKERS
+from app.stages import Stage, StageStatus
 
 
 async def run_stage(
@@ -61,7 +61,7 @@ async def run_stage_parallel(
         tasks,
         worker_prompts,
         working_dir,
-        max_concurrent=MAX_CONCURRENT_WORKERS,
+        max_concurrent=len(tasks),
         on_start=on_worker_start,
         on_complete=on_worker_complete,
         on_stream=on_stream,

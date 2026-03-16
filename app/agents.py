@@ -98,7 +98,7 @@ async def decompose_task(prompt: str, plan: str, working_dir: str) -> list[Task]
         "Rules:\n"
         "- Each subtask must be independent enough to work on in parallel\n"
         "- Include enough context in each description so a worker can act without seeing other subtasks\n"
-        "- Aim for 2-5 subtasks depending on complexity\n"
+        "- Create as many subtasks as the complexity genuinely requires — no artificial limit\n"
         "- If the task is simple and cannot be split, return a single subtask\n"
         "- Output ONLY the JSON array, no markdown fences or other text\n"
     )

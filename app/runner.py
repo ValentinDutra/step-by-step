@@ -22,7 +22,7 @@ from app.agents import Task, decompose_task
 from app.git import run_commit_pr_stage
 from app.models import pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
-from app.stages import MAX_ITERATIONS, StageStatus, create_stages
+from app.stages import StageStatus, create_stages
 from app.widgets import RERUN_ORDER, STAGE_PREV, StagePill
 
 
@@ -69,13 +69,13 @@ class PipelineRunnerMixin:
         post_stages = [(i, s) for i, s in enumerate(stages) if not s.iterable and s.name not in ("Decomposition", "Code Quality")]
         cq_idx, cq_stage = stage_map["Code Quality"]
 
-        while iteration < MAX_ITERATIONS:
+        while True:
             iteration += 1
             iteration_context = ""
             if iteration > 1:
-                self._write_log(f"\n[bold cyan]━━━ Iteration {iteration}/{MAX_ITERATIONS} ━━━[/bold cyan]")
+                self._write_log(f"\n[bold cyan]━━━ Iteration {iteration} ━━━[/bold cyan]")
                 iteration_context = (
-                    f"This is iteration {iteration}/{MAX_ITERATIONS} of the refinement loop.\n"
+                    f"This is iteration {iteration} of the refinement loop.\n"
                     f"Previous test/validation feedback:\n{prev_output[:4000]}\n\n"
                     "Focus on fixing the issues identified in the previous iteration.\n\n"
                 )
@@ -91,7 +91,7 @@ class PipelineRunnerMixin:
                     pill.update_status(StageStatus.RUNNING)
                     self._clear_stream()
                     self._set_stream_header(
-                        f"{stage.name} — {len(decomposed_tasks)} workers (iter {iteration}/{MAX_ITERATIONS})"
+                        f"{stage.name} — {len(decomposed_tasks)} workers (iter {iteration})"
                     )
                     self._write_log(
                         f"\n[bold yellow]▶ {stage.name}[/bold yellow] "
@@ -140,7 +140,7 @@ class PipelineRunnerMixin:
                 else:
                     pill.update_status(StageStatus.RUNNING)
                     self._clear_stream()
-                    self._set_stream_header(f"{stage.name} (iter {iteration}/{MAX_ITERATIONS})")
+                    self._set_stream_header(f"{stage.name} (iter {iteration})")
                     self._write_log(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
 
                     def on_single_stream(chunk, _self=self):
@@ -198,11 +198,10 @@ class PipelineRunnerMixin:
             if not has_issues(prev_output):
                 self._write_log(f"\n[bold green]No issues found — exiting loop after {iteration} iteration(s)[/bold green]")
                 break
-            elif iteration < MAX_ITERATIONS:
+            else:
                 self._write_log("\n[bold yellow]Issues detected — looping back for refinement…[/bold yellow]")
 
         # ── Quality refinement loop ──────────────────────────────────────────
-        MAX_QUALITY_RETRIES = 2
         quality_retry = 0
         quality_fix_context = ""
 
@@ -239,9 +238,7 @@ class PipelineRunnerMixin:
             self._stage_outputs["Code Quality"] = cq_output
 
             from app.stages import has_issues
-            if not has_issues(cq_output) or quality_retry >= MAX_QUALITY_RETRIES:
-                if has_issues(cq_output):
-                    self._write_log(f"[dim]Max quality retries reached — continuing.[/dim]")
+            if not has_issues(cq_output):
                 prev_output = cq_output
                 break
 
@@ -253,7 +250,7 @@ class PipelineRunnerMixin:
             )
             self._write_log(
                 f"\n[bold yellow]Code quality issues — re-running from Decomposition "
-                f"(attempt {quality_retry}/{MAX_QUALITY_RETRIES})[/bold yellow]"
+                f"(attempt {quality_retry})[/bold yellow]"
             )
 
             for name in ("Decomposition", "Implementation", "Tests & Validation"):
@@ -396,8 +393,7 @@ class PipelineRunnerMixin:
         stats = pipeline_stats
         cost = stats.total_cost_usd
         calls = stats.total_calls
-        elapsed_str = stats.format_elapsed()
-        final_stats = f"Calls: {calls} | Cost: ${cost:.4f} | Time: {elapsed_str}"
+        final_stats = f"Calls: {calls} | Cost: ${cost:.4f} | Time: {stats.format_stage_time()}"
 
         stats_bar.remove_class("working")
         if not failed:
@@ -554,7 +550,7 @@ class PipelineRunnerMixin:
                     break
 
         stats = pipeline_stats
-        final_stats = f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} | Time: {stats.format_elapsed()}"
+        final_stats = f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} | Time: {stats.format_stage_time()}"
 
         stats_bar.remove_class("working")
         if not failed:

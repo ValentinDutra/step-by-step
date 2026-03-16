@@ -11,3 +11,7 @@ __pycache__/
 dist/
 build/
 .venv/
+.python-version
+
+# Pipeline exports
+pipeline_log_*.txt

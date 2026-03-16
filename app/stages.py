@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 
-from app.models import Task
+from app.models import Task, pipeline_stats
 
 
 class StageStatus(Enum):
@@ -36,15 +36,13 @@ class Stage:
         self.elapsed = time.time() - self._start_time
         self.output = output
         self.status = StageStatus.COMPLETED
+        pipeline_stats.add_stage_time(self.elapsed)
 
     def fail(self, error: str):
         self.elapsed = time.time() - self._start_time
         self.error = error
         self.status = StageStatus.FAILED
 
-
-MAX_ITERATIONS = 3
-MAX_CONCURRENT_WORKERS = 4
 
 STAGES = [
     Stage(
@@ -104,8 +102,12 @@ STAGES = [
             "2. Edge cases and error scenarios\n"
             "3. Integration tests where applicable\n\n"
             "Use the appropriate test framework for the language.\n"
-            "At the end, output a section called '## Issues Found' listing any problems.\n"
-            "If there are no issues, write '## Issues Found\\nNone — all tests pass.'"
+            "At the end, output a section called '## Issues Found' listing any real, unfixed problems.\n"
+            "If everything is correct, write '## Issues Found\\nNone — all tests pass.'\n"
+            "IMPORTANT: your '## Issues Found' section controls whether the pipeline loops again.\n"
+            "Only report issues if they are genuine and require another implementation pass.\n"
+            "If you report issues, the pipeline will re-run Implementation to fix them.\n"
+            "If you write None, the pipeline moves on — so only do that when the code is truly ready."
         ),
         worker_prompt_template=(
             "You are a senior QA engineer working as part of a team.\n"
@@ -119,8 +121,10 @@ STAGES = [
             "1. Unit tests covering all functions/methods\n"
             "2. Edge cases and error scenarios\n"
             "3. Integration tests where applicable\n\n"
-            "At the end, output a section called '## Issues Found' listing any problems.\n"
-            "If there are no issues, write '## Issues Found\\nNone — all tests pass.'"
+            "At the end, output a section called '## Issues Found' listing any real, unfixed problems.\n"
+            "If everything is correct, write '## Issues Found\\nNone — all tests pass.'\n"
+            "IMPORTANT: your '## Issues Found' section controls whether the pipeline loops again.\n"
+            "Only report issues if they are genuine and require another implementation pass."
         ),
         iterable=True,
         parallel=True,
@@ -137,7 +141,12 @@ STAGES = [
             "3. Performance issues\n"
             "4. Naming, structure, and readability\n"
             "5. DRY violations\n\n"
-            "Output the improved code with explanations of changes."
+            "Output the improved code with explanations of changes.\n\n"
+            "At the end, output a section called '## Issues Found' listing any issues you could NOT fix inline.\n"
+            "If everything is resolved, write '## Issues Found\\nNone — code quality is good.'\n"
+            "IMPORTANT: your '## Issues Found' section controls whether the pipeline re-runs Implementation.\n"
+            "Only report issues if they require a full re-implementation pass to fix.\n"
+            "If you write None, the pipeline proceeds to Documentation."
         ),
     ),
     Stage(
