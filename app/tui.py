@@ -5,7 +5,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, HorizontalScroll, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.reactive import var
-from textual.widgets import Footer, Header, Input, Label, RichLog, Static
+from textual.widgets import Footer, Header, Label, RichLog, Static, TextArea
 
 from app.agents import Task, pipeline_stats
 from app.pipeline import (
@@ -86,9 +86,10 @@ class StagePill(Static):
 class PipelineApp(App):
     """Multi-agent Dev Pipeline TUI."""
 
-    def __init__(self, working_dir: str = "", **kwargs):
+    def __init__(self, working_dir: str = "", prompt_file: str = "", **kwargs):
         import os
         self.working_dir = working_dir or os.getcwd()
+        self.prompt_file = prompt_file
         super().__init__(**kwargs)
 
     TITLE = "Dev Pipeline — Multi-Agent"
@@ -165,6 +166,14 @@ class PipelineApp(App):
     /* ══ Input ══ */
     #prompt-input {
         margin: 0 2 0 2;
+        height: 5;
+        border: round $primary-background;
+    }
+
+    #prompt-hint {
+        margin: 0 2;
+        height: 1;
+        color: $text-muted;
     }
 
     /* ══ Activity log ══ */
@@ -209,6 +218,7 @@ class PipelineApp(App):
     BINDINGS = [
         ("ctrl+c", "quit", "Quit"),
         ("ctrl+l", "clear_log", "Clear Log"),
+        ("ctrl+enter", "submit_prompt", "Run"),
     ]
 
     running = var(False)
@@ -223,10 +233,11 @@ class PipelineApp(App):
                 if i < len(stages) - 1:
                     yield Label("──●──", classes="pill-sep")
         yield Label(f"  {self.working_dir}", id="repo-label")
-        yield Input(
-            placeholder="Enter your task… (e.g. 'Add user authentication with JWT')",
+        yield TextArea(
             id="prompt-input",
+            soft_wrap=True,
         )
+        yield Label("  Ctrl+Enter to run  |  paste markdown/code freely", id="prompt-hint")
         # Streaming pane
         with Vertical(id="stream-pane"):
             yield Label("● Waiting for pipeline…", id="stream-header")
@@ -239,6 +250,17 @@ class PipelineApp(App):
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._refresh_stats)
+        if self.prompt_file:
+            import os
+            try:
+                text = open(self.prompt_file).read().strip()
+                ta = self.query_one("#prompt-input", TextArea)
+                ta.load_text(text)
+                self.set_timer(0.3, lambda: self.run_pipeline(text))
+            except OSError as e:
+                self.query_one("#log-container", RichLog).write(
+                    f"[red]Cannot read prompt file:[/red] {e}"
+                )
 
     def _refresh_stats(self) -> None:
         if not self.running:
@@ -274,18 +296,20 @@ class PipelineApp(App):
         except NoMatches:
             pass
 
-    @on(Input.Submitted, "#prompt-input")
-    def on_submit(self, event: Input.Submitted):
-        if self.running or not event.value.strip():
+    def action_submit_prompt(self) -> None:
+        if self.running:
             return
-        self.run_pipeline(event.value.strip())
+        ta = self.query_one("#prompt-input", TextArea)
+        text = ta.text.strip()
+        if text:
+            self.run_pipeline(text)
 
     @work(exclusive=True)
     async def run_pipeline(self, prompt: str):
         self.running = True
         log = self.query_one("#log-container", RichLog)
         stats_bar = self.query_one("#stats-bar", Label)
-        prompt_input = self.query_one("#prompt-input", Input)
+        prompt_input = self.query_one("#prompt-input", TextArea)
 
         stats_bar.remove_class("success", "error")
         stats_bar.add_class("working")
@@ -526,6 +550,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Dev Pipeline — Multi-agent LLM-powered development stages")
     parser.add_argument("repo", nargs="?", default=os.getcwd(), help="Path to the target repository (default: current directory)")
+    parser.add_argument("-f", "--prompt-file", default="", metavar="FILE", help="Read prompt from FILE and start pipeline immediately")
     args = parser.parse_args()
 
     repo = os.path.abspath(os.path.expanduser(args.repo))
@@ -533,7 +558,14 @@ def main():
         print(f"Error: '{repo}' is not a directory")
         raise SystemExit(1)
 
-    app = PipelineApp(working_dir=repo)
+    prompt_file = ""
+    if args.prompt_file:
+        prompt_file = os.path.abspath(os.path.expanduser(args.prompt_file))
+        if not os.path.isfile(prompt_file):
+            print(f"Error: prompt file '{prompt_file}' not found")
+            raise SystemExit(1)
+
+    app = PipelineApp(working_dir=repo, prompt_file=prompt_file)
     app.run()
 
 
