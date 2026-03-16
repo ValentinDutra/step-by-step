@@ -1,11 +1,12 @@
 # Dev Pipeline
 
-A terminal UI that runs your development task through a sequential pipeline, each stage powered by Claude Code.
+A terminal UI that runs your development task through a sequential multi-agent pipeline, each stage powered by Claude Code.
 
 ```
-○ Planning          →  ◉ Implementation  →  ○ Tests & Validation
-○ Code Quality      →  ○ Docs & Test Run →  ○ Review & PR
+○ Plan  →  ○ Decomp  →  ○ Impl ⋮  →  ○ Tests ⋮  →  ○ Quality  →  ○ Docs  →  ○ PR
 ```
+
+Stages marked with `⋮` run in parallel across subtasks automatically decomposed from your prompt.
 
 ## Quick Start
 
@@ -13,18 +14,25 @@ A terminal UI that runs your development task through a sequential pipeline, eac
 uv run pipeline
 ```
 
-Enter a prompt, press Enter, and watch the stages execute.
+Paste your task or prompt, press `Ctrl+Enter`, and watch the stages execute live.
 
 ## Pipeline Stages
 
 | Stage | What it does |
 |-------|-------------|
-| Planning | Creates task list + full implementation plan |
-| Implementation | Writes code using Claude Code |
-| Tests & Validation | Creates tests, validates coverage |
-| Code Quality | Fixes technical debt, security, performance |
-| Docs & Test Run | Adds documentation, runs and fixes tests |
-| Review & PR | Final review, generates PR description |
+| **Planning** | Senior architect creates a numbered implementation plan with tasks, decisions, and risks. Retries up to 3× if issues are found. |
+| **Decomposition** | Breaks the plan into independent parallel subtasks for Implementation and Tests. |
+| **Implementation** | Parallel workers write production-ready code — one per subtask. |
+| **Tests & Validation** | Parallel workers write unit, edge-case, and integration tests per subtask. Retries on failures. |
+| **Code Quality** | Reviews the implementation for technical debt, security, performance, and readability. |
+| **Documentation** | Generates README sections, docstrings, API reference, and migration notes. |
+| **Commit & PR** | Produces conventional commits and a GitHub PR description as structured JSON, then commits and opens the PR. |
+
+## UI Layout
+
+- **Stage pills bar** — horizontal scrollable bar showing each stage with status icon and elapsed time
+- **Streaming pane** — live output from the currently running stage
+- **Cost bar** — running total of Claude API cost and number of calls
 
 ## Requirements
 
@@ -36,6 +44,6 @@ Enter a prompt, press Enter, and watch the stages execute.
 
 | Key | Action |
 |-----|--------|
-| Enter | Start pipeline |
-| Ctrl+L | Clear log |
-| Ctrl+C | Quit |
+| `Ctrl+Enter` | Run pipeline |
+| `Ctrl+L` | Clear log |
+| `Ctrl+C` | Quit |

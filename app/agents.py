@@ -79,6 +79,7 @@ async def call_claude(
             "--print",
             "--dangerously-skip-permissions",
             "--output-format", "stream-json",
+            "--verbose",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -92,30 +93,39 @@ async def call_claude(
         final_output = ""
         cost_usd = 0.0
 
-        async for raw_line in proc.stdout:
-            line = raw_line.decode().strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-                etype = event.get("type")
-                if etype == "assistant" and on_stream:
-                    for block in event.get("message", {}).get("content", []):
-                        if block.get("type") == "text":
-                            chunk = block["text"]
-                            if asyncio.iscoroutinefunction(on_stream):
-                                await on_stream(chunk)
-                            else:
-                                on_stream(chunk)
-                elif etype == "result":
-                    final_output = event.get("result", "")
-                    cost_usd = float(event.get("cost_usd") or 0.0)
-                    if event.get("subtype") == "error" or event.get("is_error"):
-                        await proc.wait()
-                        pipeline_stats.add_call(cost_usd)
-                        return False, final_output or "Claude returned an error", cost_usd
-            except (json.JSONDecodeError, KeyError, TypeError):
-                pass
+        # Read in raw chunks to avoid asyncio StreamReader's 64KB line limit
+        # (stream-json lines can be very large for long Planning responses)
+        buf = b""
+        while True:
+            raw_chunk = await proc.stdout.read(65536)
+            if not raw_chunk:
+                break
+            buf += raw_chunk
+            while b"\n" in buf:
+                raw_line, buf = buf.split(b"\n", 1)
+                line = raw_line.decode(errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    event = json.loads(line)
+                    etype = event.get("type")
+                    if etype == "assistant" and on_stream:
+                        for block in event.get("message", {}).get("content", []):
+                            if block.get("type") == "text":
+                                chunk = block["text"]
+                                if asyncio.iscoroutinefunction(on_stream):
+                                    await on_stream(chunk)
+                                else:
+                                    on_stream(chunk)
+                    elif etype == "result":
+                        final_output = event.get("result", "")
+                        cost_usd = float(event.get("cost_usd") or 0.0)
+                        if event.get("subtype") == "error" or event.get("is_error"):
+                            await proc.wait()
+                            pipeline_stats.add_call(cost_usd)
+                            return False, final_output or "Claude returned an error", cost_usd
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    pass
 
         stderr_data = await proc.stderr.read()
         await proc.wait()
