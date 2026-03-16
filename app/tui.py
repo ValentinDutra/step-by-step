@@ -19,7 +19,6 @@ from app.pipeline import (
     run_stage_parallel,
 )
 
-# Short display names for the horizontal pill bar
 STAGE_SHORT_NAMES = {
     "Planning": "Plan",
     "Decomposition": "Decomp",
@@ -34,7 +33,6 @@ STAGE_SHORT_NAMES = {
 class StagePill(Static):
     """Rounded-box stage card for the horizontal pipeline bar."""
 
-    # Status icon markup per state
     _ICONS = {
         StageStatus.PENDING:   "[dim]○[/dim]",
         StageStatus.RUNNING:   "[bold yellow]◉[/bold yellow]",
@@ -54,7 +52,6 @@ class StagePill(Static):
             short += " ⇶"
         icon = self._ICONS[status]
         time_str = f"  [dim]{self._fmt(elapsed)}[/dim]" if elapsed > 0 else ""
-        # Bold name only when running
         name = f"[bold]{short}[/bold]" if status == StageStatus.RUNNING else short
         return f"{icon}  {name}{time_str}"
 
@@ -225,7 +222,6 @@ class PipelineApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        # Horizontal stage pill bar (scrollable so it never wraps)
         stages = create_stages()
         with HorizontalScroll(id="stage-bar"):
             for i, stage in enumerate(stages):
@@ -238,13 +234,10 @@ class PipelineApp(App):
             soft_wrap=True,
         )
         yield Label("  Ctrl+Enter to run  |  paste markdown/code freely", id="prompt-hint")
-        # Streaming pane
         with Vertical(id="stream-pane"):
             yield Label("● Waiting for pipeline…", id="stream-header")
             yield RichLog(id="stream-log", highlight=True, markup=True, wrap=True)
-        # Activity log
         yield RichLog(id="log-container", highlight=True, markup=True)
-        # Stats bar (docked bottom)
         yield Label("Calls: 0 | Cost: $0.000 | Time: 0s", id="stats-bar")
         yield Footer()
 
@@ -315,13 +308,11 @@ class PipelineApp(App):
         stats_bar.add_class("working")
         prompt_input.disabled = True
 
-        # Reset stats
         pipeline_stats.reset()
 
         stages = create_stages()
         pills = list(self.query(StagePill))
 
-        # Reset all pills
         for pill in pills:
             pill.update_status(StageStatus.PENDING)
 
@@ -359,7 +350,6 @@ class PipelineApp(App):
                 pill = pills[i]
 
                 if stage.parallel and decomposed_tasks:
-                    # --- Parallel worker mode ---
                     pill.update_status(StageStatus.RUNNING)
                     self._clear_stream()
                     self._set_stream_header(
@@ -371,7 +361,7 @@ class PipelineApp(App):
                     )
 
                     def on_worker_start(task, _pill=pill):
-                        pass  # pill doesn't track workers individually anymore
+                        pass
 
                     def on_worker_complete(task, result, _pill=pill, _log=log):
                         status_str = "completed" if result.success else "failed"
@@ -412,7 +402,6 @@ class PipelineApp(App):
                         failed = True
                         break
                 else:
-                    # --- Single agent mode ---
                     pill.update_status(StageStatus.RUNNING)
                     self._clear_stream()
                     self._set_stream_header(f"{stage.name} (iter {iteration}/{MAX_ITERATIONS})")
@@ -437,7 +426,6 @@ class PipelineApp(App):
                         prev_output = output
                         iteration_context = ""
 
-                        # After Planning → run Decomposition
                         if stage.name == "Planning":
                             decomp_idx, decomp_stage = stage_map["Decomposition"]
                             decomp_pill = pills[decomp_idx]
@@ -474,7 +462,6 @@ class PipelineApp(App):
             elif iteration < MAX_ITERATIONS:
                 log.write("\n[bold yellow]Issues detected — looping back for refinement…[/bold yellow]")
 
-        # --- Post-loop stages (Code Quality, Documentation, Commit & PR) ---
         if not failed:
             for i, stage in post_stages:
                 pill = pills[i]
@@ -484,7 +471,6 @@ class PipelineApp(App):
                 log.write(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
 
                 if stage.name == "Commit & PR":
-                    # Special runner: generates conventional commits + runs git/gh
                     def on_pr_stream(chunk, _self=self):
                         _self._append_stream(chunk)
 
@@ -520,7 +506,6 @@ class PipelineApp(App):
                     failed = True
                     break
 
-        # Final stats update
         stats = pipeline_stats
         cost = stats.total_cost_usd
         calls = stats.total_calls

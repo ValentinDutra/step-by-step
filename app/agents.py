@@ -93,8 +93,6 @@ async def call_claude(
         final_output = ""
         cost_usd = 0.0
 
-        # Read in raw chunks to avoid asyncio StreamReader's 64KB line limit
-        # (stream-json lines can be very large for long Planning responses)
         buf = b""
         while True:
             raw_chunk = await proc.stdout.read(65536)
@@ -225,7 +223,6 @@ async def run_workers_parallel(
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def limited_worker(task, prompt):
-        # Give each worker its own stream callback tagged with its ID
         worker_stream = None
         if on_stream:
             def worker_stream(chunk, _task=task):

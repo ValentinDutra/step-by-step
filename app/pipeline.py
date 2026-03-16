@@ -72,7 +72,7 @@ STAGES = [
     ),
     Stage(
         name="Decomposition",
-        prompt_template="",  # Handled by decompose_task() in agents.py
+        prompt_template="",
         parallel=False,
     ),
     Stage(
@@ -334,17 +334,14 @@ async def run_commit_pr_stage(
         if on_log:
             on_log(msg)
 
-    # ── 1. Gather git context ──────────────────────────────────────────────
     _, diff_stat, _ = await _git(working_dir, "diff", "HEAD", "--stat")
     if not diff_stat:
-        # Nothing committed yet — check working tree
         _, diff_stat, _ = await _git(working_dir, "diff", "--stat")
     if not diff_stat:
         _, diff_stat, _ = await _git(working_dir, "status", "--short")
 
     _, current_branch, _ = await _git(working_dir, "rev-parse", "--abbrev-ref", "HEAD")
 
-    # ── 2. Ask Claude for conventional commits + PR details ────────────────
     conv_prompt = stage.prompt_template.format(
         prompt=prompt,
         prev_output=prev_output[:3000],
@@ -356,7 +353,6 @@ async def run_commit_pr_stage(
         stage.fail(f"Failed to generate commit info: {conv_output}")
         return ""
 
-    # ── 3. Parse the JSON ──────────────────────────────────────────────────
     try:
         text = conv_output.strip()
         if text.startswith("```"):
@@ -370,13 +366,11 @@ async def run_commit_pr_stage(
         pr_title = f"feat: {prompt[:60]}"
         pr_body = f"## Summary\n- {prompt}\n\n## Test Plan\n- [ ] Manual testing"
 
-    # ── 4. Stage all changes ───────────────────────────────────────────────
     rc, _, err = await _git(working_dir, "add", "-A")
     if rc != 0:
         stage.fail(f"git add failed: {err}")
         return ""
 
-    # ── 5. Create conventional commits ────────────────────────────────────
     _, status_out, _ = await _git(working_dir, "status", "--porcelain")
     if status_out:
         for c in commits:
@@ -393,7 +387,6 @@ async def run_commit_pr_stage(
     else:
         _log("nothing to commit — working tree clean")
 
-    # ── 6. Create the GitHub PR ────────────────────────────────────────────
     rc, pr_url, err = await _gh(
         working_dir,
         "pr", "create",
