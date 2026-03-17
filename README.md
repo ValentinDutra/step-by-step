@@ -95,16 +95,16 @@ Once a run completes, every stage pill in the header becomes clickable. Click an
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Plan  │  Decomp  │  Impl ⇶  │  Tests ⇶  │  Quality  │  PR    │  ← stage bar
-├──────────────────────────────┬──────────────────────────────────┤
-│                              │                                  │
-│      Streaming pane          │         Activity log             │
-│  (live output from active    │   (full chronological history)   │
-│   stage or worker)           │                                  │
-│                              │                                  │
-├──────────────────────────────┴──────────────────────────────────┤
-│  Calls: 12  |  Time: 4m 12s                    ← stats bar     │
 ├─────────────────────────────────────────────────────────────────┤
 │  > Describe your task…                                          │  ← prompt input
+├──────────────────────────────┬──────────────────────────────────┤
+│  ● Planning                  │                                  │
+│                              │         Activity log             │
+│      Streaming pane          │   (full chronological history)   │
+│  (live output from active    │                                  │
+│   stage or worker)           │                                  │
+├──────────────────────────────┴──────────────────────────────────┤
+│  ^p palette  ^l Clear Log  ctrl+↵ Run  ^e Export Log  ^m Monitor        Calls: 4  |  Cost: $0.0234  |  Time: 1m 20s  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
