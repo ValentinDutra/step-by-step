@@ -1,0 +1,192 @@
+Screen {
+    background: $surface;
+}
+
+/* ══ Stage pill bar ══ */
+#stage-bar {
+    height: 5;
+    padding: 1 2;
+    background: $surface;
+    align: left middle;
+}
+
+/* Each stage card: rounded border, fixed height 3 */
+.pill {
+    height: 3;
+    width: auto;
+    min-width: 18;
+    padding: 0 2;
+    background: $panel;
+    border: round $primary-background;
+    content-align: left middle;
+}
+
+/* Running — highlight border + slightly lighter bg */
+.pill.pill-running {
+    border: round $warning;
+    background: $boost;
+}
+
+/* Completed — subtle green border */
+.pill.pill-done {
+    border: round $success-darken-2;
+    background: $panel;
+}
+
+/* Failed — red border */
+.pill.pill-failed {
+    border: round $error-darken-2;
+    background: $panel;
+}
+
+/* Clickable hover — signals re-run affordance */
+.pill.pill-rerunnable:hover {
+    border: round $accent;
+    background: $boost;
+}
+
+/* Connector between pills: ──●── centered on the middle row */
+.pill-sep {
+    height: 3;
+    width: 7;
+    content-align: center middle;
+    color: $text-muted;
+}
+
+/* ══ Stream pane ══ */
+#stream-pane {
+    height: 10;
+    margin: 0 2;
+    border: round $primary-background;
+    background: $panel;
+}
+
+#stream-header {
+    height: 1;
+    padding: 0 1;
+    background: $primary-background 30%;
+    color: $text-muted;
+}
+
+#stream-log {
+    height: 1fr;
+    padding: 0 1;
+}
+
+/* ══ Input ══ */
+#prompt-input {
+    margin: 0 2 0 2;
+    height: 5;
+    border: round $primary-background;
+}
+
+#prompt-hint {
+    margin: 0 2;
+    height: 1;
+    color: $text-muted;
+}
+
+/* ══ Activity log ══ */
+#log-container {
+    margin: 0 2 0 2;
+    height: 1fr;
+    border: round $primary-background;
+}
+
+/* ══ Stats bar ══ */
+#stats-bar {
+    dock: bottom;
+    height: 1;
+    padding: 0 2;
+    background: $panel;
+    color: $text-muted;
+}
+
+#stats-bar.working {
+    background: $warning 20%;
+    color: $warning;
+}
+
+#stats-bar.success {
+    background: $success 20%;
+    color: $success;
+}
+
+#stats-bar.error {
+    background: $error 20%;
+    color: $error;
+}
+
+/* ══ Repo label ══ */
+#repo-label {
+    padding: 0 2;
+    color: $text-muted;
+    height: 1;
+}
+
+/* ══ System monitor panel ══ */
+#monitor-panel {
+    height: 10;
+    margin: 0 2;
+    border: round $primary-background;
+    background: $panel;
+    padding: 0 1;
+}
+
+#monitor-panel.hidden {
+    display: none;
+}
+
+.monitor-row {
+    height: 2;
+    align: left middle;
+}
+
+.monitor-label {
+    width: 5;
+    color: $text-muted;
+    text-style: bold;
+}
+
+.monitor-spark {
+    width: 1fr;
+    height: 2;
+}
+
+.monitor-val {
+    width: 10;
+    text-align: right;
+    color: $text;
+}
+
+/* CPU: green → red gradient */
+#cpu-spark > .sparkline--min-color {
+    color: $success;
+}
+#cpu-spark > .sparkline--max-color {
+    color: $error;
+}
+
+/* RAM: cyan → yellow gradient */
+#ram-spark > .sparkline--min-color {
+    color: $accent;
+}
+#ram-spark > .sparkline--max-color {
+    color: $warning;
+}
+
+/* Net upload: dark blue → bright blue */
+#net-out-spark > .sparkline--min-color {
+    color: $primary-darken-3;
+}
+#net-out-spark > .sparkline--max-color {
+    color: $primary;
+}
+
+/* Net download: dark purple → magenta */
+#net-in-spark > .sparkline--min-color {
+    color: $secondary-darken-2;
+}
+#net-in-spark > .sparkline--max-color {
+    color: $secondary;
+}
