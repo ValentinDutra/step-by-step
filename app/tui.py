@@ -6,10 +6,10 @@ from datetime import datetime
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import HorizontalScroll, Vertical
+from textual.containers import Horizontal, HorizontalScroll, Vertical
 from textual.css.query import NoMatches
 from textual.reactive import var
-from textual.widgets import Footer, Header, Label, RichLog, TextArea
+from textual.widgets import Header, Label, RichLog, Static, TextArea
 
 from app.models import pipeline_stats
 from app.runner import PipelineRunnerMixin
@@ -60,8 +60,14 @@ class PipelineApp(PipelineRunnerMixin, App):
             yield Label("● Waiting for pipeline…", id="stream-header")
             yield RichLog(id="stream-log", highlight=True, markup=True, wrap=True)
         yield RichLog(id="log-container", highlight=True, markup=True)
-        yield Label("Calls: 0 | Cost: $0.000 | Time: 0s", id="stats-bar")
-        yield Footer()
+        with Horizontal(id="app-footer"):
+            yield Static(
+                " [dim]^p[/dim] palette  [dim]^l[/dim] Clear Log"
+                "  [dim]ctrl+↵[/dim] Run  [dim]^e[/dim] Export Log"
+                "  [dim]^m[/dim] Monitor",
+                id="footer-keys",
+            )
+            yield Label("Calls: 0  |  Cost: $0.000  |  Time: 0s", id="stats-bar")
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._refresh_stats)
@@ -82,7 +88,7 @@ class PipelineApp(PipelineRunnerMixin, App):
         stats_bar = self.query_one("#stats-bar", Label)
         stats = pipeline_stats
         stats_bar.update(
-            f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} | Time: {stats.format_elapsed()}"
+            f"Calls: {stats.total_calls}  |  Cost: ${stats.total_cost_usd:.4f}  |  Time: {stats.format_elapsed()}"
         )
 
     def _refresh_monitor(self) -> None:

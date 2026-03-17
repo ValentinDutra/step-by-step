@@ -102,7 +102,7 @@ Once a run completes, every stage pill in the header becomes clickable. Click an
 │   stage or worker)           │                                  │
 │                              │                                  │
 ├──────────────────────────────┴──────────────────────────────────┤
-│  Calls: 12 | Cost: $0.0234 | Time: 4m 12s                      │  ← stats bar
+│  Calls: 12  |  Time: 4m 12s                    ← stats bar     │
 ├─────────────────────────────────────────────────────────────────┤
 │  > Describe your task…                                          │  ← prompt input
 └─────────────────────────────────────────────────────────────────┘
