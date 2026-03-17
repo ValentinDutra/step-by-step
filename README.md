@@ -1,27 +1,64 @@
-# Step-by-Step — Multi-Agent Dev Pipeline
+# Step-by-Step
 
-A terminal UI that runs your development tasks through a multi-agent LLM pipeline, inspired by GitHub Actions. Each stage is handled by a specialized Claude agent: planner, decomposer, implementers (parallel workers), QA engineers, code reviewer, technical writer, and a commit/PR bot.
+A terminal UI that runs your development tasks through a structured multi-agent pipeline. You describe what you want to build; a team of specialized Claude agents plans, implements, tests, reviews, and opens a pull request — autonomously.
+
+![Step-by-Step in action](assets/screenshot.png)
+
+---
+
+## How it works
+
+Step-by-Step models software delivery as a linear pipeline of specialized agents, each owning a single responsibility. Stages that can be parallelized fan out into independent worker agents that run concurrently, then merge their results before the next stage begins.
 
 ```
-Plan ──●── Decomp ──●── Impl ⇶ ──●── Tests ⇶ ──●── Quality ──●── Docs ──●── PR
+Plan ──● Decomp ──● Impl ⇶ ──● Tests ⇶ ──● Quality ──● Docs ──● PR
 ```
 
-Stages marked with `⇶` run in parallel — your task is split into independent subtasks, each handled by a dedicated worker agent simultaneously.
+`⇶` = parallel workers · `●` = single agent
 
-## Prerequisites
+### Pipeline stages
+
+| Stage | Mode | What it does |
+|---|---|---|
+| **Planning** | Single agent | Senior architect reads your codebase and produces a concrete, numbered implementation plan |
+| **Decomposition** | Manager agent | Splits the plan into independent subtasks that can be worked on simultaneously |
+| **Implementation** | Parallel workers | Each subtask is handed to a dedicated worker agent; all workers run concurrently |
+| **Tests & Validation** | Parallel workers | QA agents write and run tests per subtask; surface failures via `## Issues Found` |
+| **Code Quality** | Single agent | Reviewer checks for code smells, security issues, and readability |
+| **Documentation** | Single agent | Generates or updates README sections, docstrings, and API reference |
+| **Commit & PR** | Single agent | Writes conventional commits and opens a GitHub Pull Request |
+
+### Refinement loops
+
+Claude drives two autonomous feedback loops — it decides when to stop by reporting `## Issues Found: None`.
+
+- **Test loop** — cycles through Implementation → Tests & Validation until no issues remain
+- **Quality loop** — re-decomposes and re-implements until Code Quality is satisfied
+
+### RAM-based flow control
+
+Worker concurrency is not capped by a fixed number. Instead, the pipeline uses TCP-style flow control: a new worker starts only when system RAM is below 75%. Starts are serialized and include a post-start delay so the OS can register each new process's footprint before the next candidate is evaluated. When RAM is high, new workers queue up and resume as running workers release memory.
+
+---
+
+## Requirements
 
 - **Python 3.13+**
 - **[uv](https://docs.astral.sh/uv/)** (recommended) or pip
 - **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** — `npm install -g @anthropic-ai/claude-code`
-- **[GitHub CLI](https://cli.github.com/)** — required for the Commit & PR stage
+- **[GitHub CLI](https://cli.github.com/)** — required for the Commit & PR stage (`gh auth login`)
+
+---
 
 ## Installation
 
 ```bash
-git clone <repo>
+git clone https://github.com/ValentinDutra/step-by-step.git
 cd step-by-step
 uv sync
 ```
+
+---
 
 ## Usage
 
@@ -29,71 +66,75 @@ uv sync
 # Run against the current directory
 uv run pipeline
 
-# Run against a specific repo
+# Run against a specific repository
 uv run pipeline /path/to/your/repo
 
 # Load a prompt from a file and start immediately
 uv run pipeline /path/to/your/repo -f prompt.txt
 ```
 
-Paste your task description in the input area and press `Ctrl+Enter` to start.
+Type your task in the input area at the bottom and press `Ctrl+Enter` to start.
 
-## Keyboard Shortcuts
+### Keyboard shortcuts
 
 | Key | Action |
-|-----|--------|
-| `Ctrl+Enter` | Submit prompt and run pipeline |
-| `Ctrl+L` | Clear activity log |
+|---|---|
+| `Ctrl+Enter` | Submit prompt and run the pipeline |
+| `Ctrl+L` | Clear the activity log |
 | `Ctrl+E` | Export log to `pipeline_log_<timestamp>.txt` |
 | `Ctrl+C` | Quit |
 
-## Re-running Stages
+### Re-running from a specific stage
 
-Once a run completes, every stage pill becomes clickable. Click any pill to re-run from that stage forward, reusing all previous context automatically.
+Once a run completes, every stage pill in the header becomes clickable. Click any stage to **re-run from that point forward**, reusing all prior context — useful for retrying a failed stage or iterating on implementation without re-planning.
 
-## Pipeline Stages
+---
 
-| Stage | Mode | Description |
-|-------|------|-------------|
-| **Planning** | Single agent | Senior architect creates a numbered implementation plan |
-| **Decomposition** | Manager | Splits the plan into independent parallel subtasks |
-| **Implementation** | Parallel workers | Each subtask implemented by a dedicated worker — number of workers decided by Claude |
-| **Tests & Validation** | Parallel workers | QA writes tests per subtask; signals issues or done via `## Issues Found` |
-| **Code Quality** | Single agent | Reviewer checks for smells, security, and readability |
-| **Documentation** | Single agent | Generates README sections, docstrings, and API reference |
-| **Commit & PR** | Single agent | Conventional commits + opens a GitHub PR |
+## UI layout
 
-### Automatic Refinement Loops
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Plan  │  Decomp  │  Impl ⇶  │  Tests ⇶  │  Quality  │  PR    │  ← stage bar
+├──────────────────────────────┬──────────────────────────────────┤
+│                              │                                  │
+│      Streaming pane          │         Activity log             │
+│  (live output from active    │   (full chronological history)   │
+│   stage or worker)           │                                  │
+│                              │                                  │
+├──────────────────────────────┴──────────────────────────────────┤
+│  Calls: 12 | Cost: $0.0234 | Time: 4m 12s                      │  ← stats bar
+├─────────────────────────────────────────────────────────────────┤
+│  > Describe your task…                                          │  ← prompt input
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Claude drives both loops — it decides when to stop by reporting `## Issues Found: None` in its output.
+---
 
-- **Test loop** — loops back through Implementation → Tests until Claude reports no issues
-- **Quality loop** — re-decomposes and re-implements until Code Quality reports no issues
-
-## UI Layout
-
-- **Stage bar** — horizontal scrollable bar with status icons and elapsed time per stage
-- **Streaming pane** — live output from the currently running stage or worker
-- **Activity log** — full history of the pipeline run
-- **Stats bar** — running total of Claude API calls, cost, and elapsed time
-
-## Project Structure
+## Project structure
 
 ```
 app/
 ├── __main__.py      Entry point
-├── models.py        Shared data classes: Task, WorkerResult, PipelineStats
-├── agents.py        Claude CLI invocation and worker coordination
-├── stages.py        Stage definitions, prompts, and pipeline config
-├── git.py           Git/gh subprocess helpers and Commit & PR stage runner
+├── models.py        Shared data classes (Task, WorkerResult, PipelineStats)
+├── agents.py        Claude CLI invocation, flow control, and worker coordination
+├── stages.py        Stage definitions, prompt templates, and pipeline configuration
 ├── pipeline.py      Stage runners: run_stage() and run_stage_parallel()
-├── widgets.py       StagePill TUI widget and stage display constants
 ├── runner.py        PipelineRunnerMixin: run_pipeline() and rerun_from_stage()
+├── widgets.py       StagePill TUI widget and display constants
+├── git.py           Git/gh subprocess helpers and Commit & PR stage runner
 └── tui.py           PipelineApp (Textual App) and main() entry point
 ```
 
-## Configuration
+---
 
-The pipeline uses `claude --dangerously-skip-permissions` so agents can write files autonomously. Only run it in repos where you trust the output — review the diff before the PR stage commits.
+## Safety
 
-Both the test refinement loop and the quality loop run until Claude reports no issues — there are no hard iteration limits.
+The pipeline invokes `claude --dangerously-skip-permissions` so agents can read and write files autonomously. **Only point it at repositories where you trust the output.** Always review the diff before the PR stage commits.
+
+Each subprocess is run with a 10-minute timeout and cleaned up unconditionally on exit — even on errors or cancellation — so stalled Claude processes do not accumulate.
+
+---
+
+## License
+
+MIT © Valentin Dutra — see [LICENSE](LICENSE)
