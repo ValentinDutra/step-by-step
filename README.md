@@ -52,9 +52,25 @@ Worker concurrency is not capped by a fixed number. Instead, the pipeline uses T
 
 ## Installation
 
+**Via npm (recommended):**
 ```bash
-git clone https://github.com/ValentinDutra/step-by-step.git
-cd step-by-step
+npm install -g step-by-step-cli
+```
+
+**Via uv:**
+```bash
+uvx step-by-step-cli
+```
+
+**Via pip:**
+```bash
+pip install step-by-step-cli
+```
+
+**From source:**
+```bash
+git clone https://github.com/ValentinDutra/step-by-step-cli.git
+cd step-by-step-cli
 uv sync
 ```
 
