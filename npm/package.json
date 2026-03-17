@@ -6,7 +6,7 @@
   "homepage": "https://github.com/ValentinDutra/step-by-step-cli",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ValentinDutra/step-by-step-cli.git"
+    "url": "git+https://github.com/ValentinDutra/step-by-step-cli.git"
   },
   "license": "MIT",
   "bin": {
