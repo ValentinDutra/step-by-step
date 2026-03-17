@@ -25,9 +25,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ValentinDutra/step-by-step"
-Repository = "https://github.com/ValentinDutra/step-by-step"
-Issues = "https://github.com/ValentinDutra/step-by-step/issues"
+Homepage = "https://github.com/ValentinDutra/step-by-step-cli"
+Repository = "https://github.com/ValentinDutra/step-by-step-cli"
+Issues = "https://github.com/ValentinDutra/step-by-step-cli/issues"
 
 [project.scripts]
 pipeline = "app.tui:main"

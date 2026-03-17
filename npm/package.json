@@ -1,0 +1,21 @@
+{
+  "name": "step-by-step-cli",
+  "version": "0.1.0",
+  "description": "LLM Development Pipeline UI — GitHub Actions-style multi-agent pipeline powered by Claude",
+  "keywords": ["llm", "ai", "cli", "pipeline", "claude", "automation", "developer-tools"],
+  "homepage": "https://github.com/ValentinDutra/step-by-step-cli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ValentinDutra/step-by-step-cli.git"
+  },
+  "license": "MIT",
+  "bin": {
+    "pipeline": "bin/step-by-step.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
