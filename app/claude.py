@@ -79,7 +79,7 @@ async def call_claude(
                                             on_stream(chunk)
                             elif etype == "result":
                                 final_output = event.get("result", "")
-                                cost_usd = float(event.get("cost_usd") or 0.0)
+                                cost_usd = float(event.get("total_cost_usd") or 0.0)
                                 if event.get("subtype") == "error" or event.get("is_error"):
                                     early_result = (
                                         False,
