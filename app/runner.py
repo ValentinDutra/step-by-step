@@ -18,15 +18,17 @@ Requires the host class to define:
 from textual import work
 from textual.widgets import Label, RichLog, TextArea
 
-from app.agents import Task, decompose_task
+from app.agents import decompose_task
+from app.claude import evaluate_should_iterate
 from app.git import create_branch, run_commit_pr_stage
-from app.models import pipeline_stats
+from app.models import Task, pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
+from app.runner_steps import PipelineStepsMixin
 from app.stages import StageStatus, create_stages
 from app.widgets import RERUN_ORDER, STAGE_PREV, StagePill
 
 
-class PipelineRunnerMixin:
+class PipelineRunnerMixin(PipelineStepsMixin):
     """Mixin providing run_pipeline and rerun_from_stage workers."""
 
     @work(exclusive=True)
@@ -43,6 +45,7 @@ class PipelineRunnerMixin:
 
         stages = create_stages()
         pills = list(self.query(StagePill))
+        stage_map = {s.name: (i, s) for i, s in enumerate(stages)}
 
         for pill in pills:
             pill.update_status(StageStatus.PENDING)
@@ -58,6 +61,7 @@ class PipelineRunnerMixin:
         self._set_stream_header("Pipeline started…")
         self._write_log(f"[bold]Pipeline started:[/bold] {prompt}\n")
 
+        # ── Branch creation ──────────────────────────────────────────────
         self._write_log("[bold yellow]▶ Creating branch…[/bold yellow]")
         branch_name = await create_branch(
             prompt,
@@ -69,154 +73,80 @@ class PipelineRunnerMixin:
         else:
             self._write_log("[yellow]⚠ Branch creation skipped[/yellow]\n")
 
-        prev_output = ""
-        iteration = 0
         failed = False
         decomposed_tasks: list[Task] = []
+        prev_output = ""
 
-        stage_map = {s.name: (i, s) for i, s in enumerate(stages)}
+        # ── Phase 1: Planning (once) ─────────────────────────────────────
+        plan_idx, plan_stage = stage_map["Planning"]
+        pills[plan_idx].update_status(StageStatus.RUNNING)
+        self._clear_stream()
+        self._set_stream_header("Planning")
+        self._write_log(f"\n[bold yellow]▶ Planning[/bold yellow]")
 
-        iterable_stages = [(i, s) for i, s in enumerate(stages) if s.iterable]
-        post_stages = [(i, s) for i, s in enumerate(stages) if not s.iterable and s.name not in ("Decomposition", "Code Quality")]
+        def on_plan_stream(chunk, _self=self):
+            _self._append_stream(chunk)
+
+        plan_output = await run_stage(
+            plan_stage, prompt, "", self.working_dir, on_stream=on_plan_stream
+        )
+        pills[plan_idx].update_status(plan_stage.status, plan_stage.elapsed)
+
+        if plan_stage.status == StageStatus.COMPLETED:
+            self._write_log(
+                f"[green]✓ Planning[/green] — {StagePill._fmt(plan_stage.elapsed)}"
+            )
+            preview = plan_output[:300].strip()
+            if preview:
+                self._write_log(f"[dim]{preview}[/dim]\n")
+            self._stage_outputs["Planning"] = plan_output
+            prev_output = plan_output
+        else:
+            self._write_log(f"[red]✗ Planning failed:[/red] {plan_stage.error}")
+            failed = True
+
+        # ── Phase 2: Decomposition (once) ────────────────────────────────
+        if not failed:
+            decomp_idx, decomp_stage = stage_map["Decomposition"]
+            decomp_pill = pills[decomp_idx]
+            decomp_pill.update_status(StageStatus.RUNNING)
+            self._clear_stream()
+            self._set_stream_header("Decomposition — splitting tasks…")
+            self._write_log(
+                f"\n[bold yellow]▶ Decomposition[/bold yellow] "
+                f"[dim](manager splitting tasks)[/dim]"
+            )
+
+            decomp_stage.start()
+            decomposed_tasks = await decompose_task(prompt, plan_output, self.working_dir)
+            decomp_stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
+            self._last_decomposed_tasks = decomposed_tasks
+
+            decomp_pill.update_status(StageStatus.COMPLETED, decomp_stage.elapsed)
+            self._write_log(
+                f"[green]✓ Decomposition[/green] — {StagePill._fmt(decomp_stage.elapsed)} "
+                f"→ [bold]{len(decomposed_tasks)} subtask(s)[/bold]"
+            )
+            for t in decomposed_tasks:
+                files = ", ".join(t.files) if t.files else "—"
+                self._write_log(f"  [dim]#{t.id}: {t.description[:80]}  ({files})[/dim]")
+
+        # ── Phase 3: Implementation + Tests loop ──────────────────────────
+        if not failed:
+            success, prev_output = await self._run_impl_tests_loop(
+                pills, stage_map, decomposed_tasks, prompt, prev_output
+            )
+            if not success:
+                failed = True
+                stats_bar.remove_class("working")
+                stats_bar.update("Failed at: Implementation / Tests & Validation")
+
+        # ── Phase 4: Code Quality & Technical Debt loop ───────────────────
         cq_idx, cq_stage = stage_map["Code Quality"]
-
-        while True:
-            iteration += 1
-            iteration_context = ""
-            if iteration > 1:
-                self._write_log(f"\n[bold cyan]━━━ Iteration {iteration} ━━━[/bold cyan]")
-                iteration_context = (
-                    f"This is iteration {iteration} of the refinement loop.\n"
-                    f"Previous test/validation feedback:\n{prev_output[:4000]}\n\n"
-                    "Focus on fixing the issues identified in the previous iteration.\n\n"
-                )
-
-            for i, stage in iterable_stages:
-                stage.status = StageStatus.PENDING
-                stage.elapsed = 0.0
-                stage.output = ""
-                stage.error = ""
-                pill = pills[i]
-
-                if stage.parallel and decomposed_tasks:
-                    pill.update_status(StageStatus.RUNNING)
-                    self._clear_stream()
-                    self._set_stream_header(
-                        f"{stage.name} — {len(decomposed_tasks)} workers (iter {iteration})"
-                    )
-                    self._write_log(
-                        f"\n[bold yellow]▶ {stage.name}[/bold yellow] "
-                        f"[dim]({len(decomposed_tasks)} parallel workers)[/dim]"
-                    )
-
-                    def on_worker_complete(task, result, _pill=pill, _self=self):
-                        status_str = "completed" if result.success else "failed"
-                        color = "green" if result.success else "red"
-                        _self._write_log(
-                            f"  [{color}]W{task.id} {status_str}[/{color}] "
-                            f"[dim]{StagePill._fmt(task.elapsed)}[/dim]"
-                        )
-
-                    def on_parallel_stream(chunk, worker_id, _self=self):
-                        _self._append_stream(chunk, worker_id)
-
-                    output = await run_stage_parallel(
-                        stage,
-                        decomposed_tasks,
-                        prompt,
-                        prev_output,
-                        self.working_dir,
-                        iteration_context=iteration_context,
-                        on_worker_start=lambda task: None,
-                        on_worker_complete=on_worker_complete,
-                        on_stream=on_parallel_stream,
-                    )
-
-                    pill.update_status(stage.status, stage.elapsed)
-
-                    if stage.status == StageStatus.COMPLETED:
-                        self._write_log(
-                            f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)} "
-                            f"[dim]({len(decomposed_tasks)} workers)[/dim]"
-                        )
-                        self._stage_outputs[stage.name] = output
-                        prev_output = output
-                        iteration_context = ""
-                    else:
-                        self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
-                        stats_bar.remove_class("working")
-                        stats_bar.update(f"Failed at: {stage.name}")
-                        failed = True
-                        break
-                else:
-                    pill.update_status(StageStatus.RUNNING)
-                    self._clear_stream()
-                    self._set_stream_header(f"{stage.name} (iter {iteration})")
-                    self._write_log(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
-
-                    def on_single_stream(chunk, _self=self):
-                        _self._append_stream(chunk)
-
-                    output = await run_stage(
-                        stage, prompt, prev_output, self.working_dir,
-                        iteration_context,
-                        on_stream=on_single_stream,
-                    )
-
-                    pill.update_status(stage.status, stage.elapsed)
-
-                    if stage.status == StageStatus.COMPLETED:
-                        self._write_log(f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)}")
-                        preview = output[:300].strip()
-                        if preview:
-                            self._write_log(f"[dim]{preview}[/dim]\n")
-                        self._stage_outputs[stage.name] = output
-                        prev_output = output
-                        iteration_context = ""
-
-                        if stage.name == "Planning":
-                            decomp_idx, decomp_stage = stage_map["Decomposition"]
-                            decomp_pill = pills[decomp_idx]
-                            decomp_pill.update_status(StageStatus.RUNNING)
-                            self._clear_stream()
-                            self._set_stream_header("Decomposition — splitting tasks…")
-                            self._write_log(f"\n[bold yellow]▶ Decomposition[/bold yellow] [dim](manager splitting tasks)[/dim]")
-
-                            decomp_stage.start()
-                            decomposed_tasks = await decompose_task(prompt, prev_output, self.working_dir)
-                            decomp_stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
-                            self._last_decomposed_tasks = decomposed_tasks
-
-                            decomp_pill.update_status(StageStatus.COMPLETED, decomp_stage.elapsed)
-                            self._write_log(
-                                f"[green]✓ Decomposition[/green] — {StagePill._fmt(decomp_stage.elapsed)} "
-                                f"→ [bold]{len(decomposed_tasks)} subtask(s)[/bold]"
-                            )
-                            for t in decomposed_tasks:
-                                files = ", ".join(t.files) if t.files else "—"
-                                self._write_log(f"  [dim]#{t.id}: {t.description[:80]}  ({files})[/dim]")
-                    else:
-                        self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
-                        stats_bar.remove_class("working")
-                        stats_bar.update(f"Failed at: {stage.name}")
-                        failed = True
-                        break
-
-            if failed:
-                break
-
-            from app.stages import has_issues
-            if not has_issues(prev_output):
-                self._write_log(f"\n[bold green]No issues found — exiting loop after {iteration} iteration(s)[/bold green]")
-                break
-            else:
-                self._write_log("\n[bold yellow]Issues detected — looping back for refinement…[/bold yellow]")
-
-        # ── Quality refinement loop ──────────────────────────────────────────
-        quality_retry = 0
-        quality_fix_context = ""
+        quality_iteration = 0
 
         while not failed:
+            quality_iteration += 1
             cq_stage.status = StageStatus.PENDING
             cq_stage.elapsed = 0.0
             cq_stage.output = ""
@@ -224,16 +154,14 @@ class PipelineRunnerMixin:
 
             pills[cq_idx].update_status(StageStatus.RUNNING)
             self._clear_stream()
-            self._set_stream_header("Code Quality")
-            self._write_log(f"\n[bold yellow]▶ Code Quality[/bold yellow]")
+            self._set_stream_header("Code Quality & Technical Debt")
+            self._write_log(f"\n[bold yellow]▶ Code Quality & Technical Debt[/bold yellow]")
 
             def on_cq_stream(chunk, _self=self):
                 _self._append_stream(chunk)
 
             cq_output = await run_stage(
-                cq_stage, prompt, prev_output, self.working_dir,
-                quality_fix_context,
-                on_stream=on_cq_stream,
+                cq_stage, prompt, prev_output, self.working_dir, on_stream=on_cq_stream
             )
             pills[cq_idx].update_status(cq_stage.status, cq_stage.elapsed)
 
@@ -242,46 +170,56 @@ class PipelineRunnerMixin:
                 failed = True
                 break
 
-            self._write_log(f"[green]✓ Code Quality[/green] — {StagePill._fmt(cq_stage.elapsed)}")
+            self._write_log(
+                f"[green]✓ Code Quality[/green] — {StagePill._fmt(cq_stage.elapsed)}"
+            )
             preview = cq_output[:300].strip()
             if preview:
                 self._write_log(f"[dim]{preview}[/dim]\n")
             self._stage_outputs["Code Quality"] = cq_output
 
-            from app.stages import has_issues
-            if not has_issues(cq_output):
+            self._set_stream_header("Evaluating quality & technical debt…")
+            should_loop = await evaluate_should_iterate(cq_output, self.working_dir)
+            if not should_loop:
                 prev_output = cq_output
+                self._write_log(
+                    "\n[bold green]Quality & debt resolved — proceeding to documentation[/bold green]"
+                )
                 break
 
-            quality_retry += 1
-            quality_fix_context = (
-                f"Code Quality review found these issues (attempt {quality_retry}):\n"
-                f"{cq_output[:3000]}\n\n"
-                "Re-decompose and re-implement to fix ALL reported issues."
+            quality_context = (
+                f"Code Quality & Technical Debt review #{quality_iteration} found issues "
+                f"that require a full re-implementation pass:\n{cq_output[:3000]}\n\n"
+                "Fix ALL reported quality and technical debt issues in the new implementation."
             )
             self._write_log(
-                f"\n[bold yellow]Code quality issues — re-running from Decomposition "
-                f"(attempt {quality_retry})[/bold yellow]"
+                f"\n[bold yellow]Quality/debt issues — re-running from Decomposition "
+                f"(attempt {quality_iteration})[/bold yellow]"
             )
 
-            for name in ("Decomposition", "Implementation", "Tests & Validation"):
-                pills[RERUN_ORDER.index(name)].update_status(StageStatus.PENDING)
+            for pill_stage_name in ("Decomposition", "Implementation", "Tests & Validation"):
+                pills[RERUN_ORDER.index(pill_stage_name)].update_status(StageStatus.PENDING)
             pills[cq_idx].update_status(StageStatus.PENDING)
 
             d_i, d_stage = stage_map["Decomposition"]
-            d_stage.status = StageStatus.PENDING
             planning_out = self._stage_outputs.get("Planning", "")
-            decomp_context = f"{planning_out}\n\n{quality_fix_context}" if planning_out else quality_fix_context
+            decomp_context = (
+                f"{planning_out}\n\n{quality_context}" if planning_out else quality_context
+            )
 
             pills[d_i].update_status(StageStatus.RUNNING)
             self._clear_stream()
-            self._set_stream_header("Decomposition — re-splitting tasks…")
-            self._write_log(f"\n[bold yellow]▶ Decomposition[/bold yellow] [dim](re-splitting with quality feedback)[/dim]")
+            self._set_stream_header("Decomposition — re-splitting with quality feedback…")
+            self._write_log(
+                f"\n[bold yellow]▶ Decomposition[/bold yellow] "
+                f"[dim](re-splitting with quality feedback)[/dim]"
+            )
 
             d_stage.start()
             decomposed_tasks = await decompose_task(prompt, decomp_context, self.working_dir)
             d_stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
             self._last_decomposed_tasks = decomposed_tasks
+
             pills[d_i].update_status(StageStatus.COMPLETED, d_stage.elapsed)
             self._write_log(
                 f"[green]✓ Decomposition[/green] — {StagePill._fmt(d_stage.elapsed)} "
@@ -291,120 +229,90 @@ class PipelineRunnerMixin:
                 files = ", ".join(t.files) if t.files else "—"
                 self._write_log(f"  [dim]#{t.id}: {t.description[:80]}  ({files})[/dim]")
 
-            prev_output = planning_out
+            success, prev_output = await self._run_impl_tests_loop(
+                pills,
+                stage_map,
+                decomposed_tasks,
+                prompt,
+                planning_out,
+                base_context=quality_context,
+                label_suffix=" (quality fix)",
+            )
+            if not success:
+                failed = True
+                stats_bar.remove_class("working")
+                stats_bar.update("Failed at: Implementation / Tests (quality fix)")
 
-            for re_name in ("Implementation", "Tests & Validation"):
-                re_i, re_stage = next((i, s) for i, s in enumerate(stages) if s.name == re_name)
-                re_stage.status = StageStatus.PENDING
-                re_stage.elapsed = 0.0
-                re_stage.output = ""
-                re_stage.error = ""
-                re_pill = pills[re_i]
-
-                re_pill.update_status(StageStatus.RUNNING)
-                self._clear_stream()
-                self._set_stream_header(re_name)
-
-                if re_stage.parallel and decomposed_tasks:
-                    self._write_log(
-                        f"\n[bold yellow]▶ {re_name}[/bold yellow] "
-                        f"[dim]({len(decomposed_tasks)} parallel workers)[/dim]"
-                    )
-
-                    def on_re_wc(task, result, _self=self):
-                        color = "green" if result.success else "red"
-                        status_str = "completed" if result.success else "failed"
-                        _self._write_log(
-                            f"  [{color}]W{task.id} {status_str}[/{color}] "
-                            f"[dim]{StagePill._fmt(task.elapsed)}[/dim]"
-                        )
-
-                    def on_re_ps(chunk, worker_id, _self=self):
-                        _self._append_stream(chunk, worker_id)
-
-                    re_output = await run_stage_parallel(
-                        re_stage, decomposed_tasks, prompt, prev_output, self.working_dir,
-                        iteration_context=quality_fix_context,
-                        on_worker_start=lambda task: None,
-                        on_worker_complete=on_re_wc,
-                        on_stream=on_re_ps,
-                    )
-                else:
-                    self._write_log(f"\n[bold yellow]▶ {re_name}[/bold yellow]")
-
-                    def on_re_ss(chunk, _self=self):
-                        _self._append_stream(chunk)
-
-                    re_output = await run_stage(
-                        re_stage, prompt, prev_output, self.working_dir,
-                        quality_fix_context,
-                        on_stream=on_re_ss,
-                    )
-
-                re_pill.update_status(re_stage.status, re_stage.elapsed)
-
-                if re_stage.status == StageStatus.COMPLETED:
-                    self._write_log(f"[green]✓ {re_name}[/green] — {StagePill._fmt(re_stage.elapsed)}")
-                    preview = re_output[:300].strip()
-                    if preview:
-                        self._write_log(f"[dim]{preview}[/dim]\n")
-                    self._stage_outputs[re_name] = re_output
-                    prev_output = re_output
-                else:
-                    self._write_log(f"[red]✗ {re_name} failed:[/red] {re_stage.error}")
-                    failed = True
-                    break
-        # ── End quality refinement loop ──────────────────────────────────────
-
+        # ── Phase 5: Documentation ────────────────────────────────────────
         if not failed:
-            for i, stage in post_stages:
-                pill = pills[i]
-                pill.update_status(StageStatus.RUNNING)
-                self._clear_stream()
-                self._set_stream_header(stage.name)
-                self._write_log(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
+            docs_idx, docs_stage = stage_map["Documentation"]
+            pills[docs_idx].update_status(StageStatus.RUNNING)
+            self._clear_stream()
+            self._set_stream_header("Documentation")
+            self._write_log(f"\n[bold yellow]▶ Documentation[/bold yellow]")
 
-                if stage.name == "Commit & PR":
-                    def on_pr_stream(chunk, _self=self):
-                        _self._append_stream(chunk)
+            def on_docs_stream(chunk, _self=self):
+                _self._append_stream(chunk)
 
-                    def on_pr_log(msg, _self=self):
-                        _self._write_log(f"  [dim]{msg}[/dim]")
+            docs_output = await run_stage(
+                docs_stage, prompt, prev_output, self.working_dir, on_stream=on_docs_stream
+            )
+            pills[docs_idx].update_status(docs_stage.status, docs_stage.elapsed)
 
-                    output = await run_commit_pr_stage(
-                        stage, prompt, prev_output, self.working_dir,
-                        on_stream=on_pr_stream,
-                        on_log=on_pr_log,
-                    )
-                else:
-                    def on_post_stream(chunk, _self=self):
-                        _self._append_stream(chunk)
+            if docs_stage.status == StageStatus.COMPLETED:
+                self._write_log(
+                    f"[green]✓ Documentation[/green] — {StagePill._fmt(docs_stage.elapsed)}"
+                )
+                preview = docs_output[:300].strip()
+                if preview:
+                    self._write_log(f"[dim]{preview}[/dim]\n")
+                self._stage_outputs["Documentation"] = docs_output
+                prev_output = docs_output
+            else:
+                self._write_log(f"[red]✗ Documentation failed:[/red] {docs_stage.error}")
+                stats_bar.update("Failed at: Documentation")
+                failed = True
 
-                    output = await run_stage(
-                        stage, prompt, prev_output, self.working_dir,
-                        on_stream=on_post_stream,
-                    )
+        # ── Phase 6: Commit & PR ─────────────────────────────────────────
+        if not failed:
+            pr_idx, pr_stage = stage_map["Commit & PR"]
+            pills[pr_idx].update_status(StageStatus.RUNNING)
+            self._clear_stream()
+            self._set_stream_header("Commit & PR")
+            self._write_log(f"\n[bold yellow]▶ Commit & PR[/bold yellow]")
 
-                pill.update_status(stage.status, stage.elapsed)
+            def on_pr_stream(chunk, _self=self):
+                _self._append_stream(chunk)
 
-                if stage.status == StageStatus.COMPLETED:
-                    self._write_log(f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)}")
-                    if stage.name != "Commit & PR":
-                        preview = output[:300].strip()
-                        if preview:
-                            self._write_log(f"[dim]{preview}[/dim]\n")
-                    self._stage_outputs[stage.name] = output
-                    prev_output = output
-                else:
-                    self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
-                    stats_bar.update(f"Failed at: {stage.name}")
-                    failed = True
-                    break
+            def on_pr_log(msg, _self=self):
+                self._write_log(f"  [dim]{msg}[/dim]")
 
+            pr_output = await run_commit_pr_stage(
+                pr_stage,
+                prompt,
+                prev_output,
+                self.working_dir,
+                on_stream=on_pr_stream,
+                on_log=on_pr_log,
+            )
+            pills[pr_idx].update_status(pr_stage.status, pr_stage.elapsed)
+
+            if pr_stage.status == StageStatus.COMPLETED:
+                self._write_log(
+                    f"[green]✓ Commit & PR[/green] — {StagePill._fmt(pr_stage.elapsed)}"
+                )
+                self._stage_outputs["Commit & PR"] = pr_output
+            else:
+                self._write_log(f"[red]✗ Commit & PR failed:[/red] {pr_stage.error}")
+                stats_bar.update("Failed at: Commit & PR")
+                failed = True
+
+        # ── Final status ─────────────────────────────────────────────────
         stats = pipeline_stats
-        cost = stats.total_cost_usd
-        calls = stats.total_calls
-        final_stats = f"Calls: {calls} | Cost: ${cost:.4f} | Time: {stats.format_stage_time()}"
+        final_stats = (
+            f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} "
+            f"| Time: {stats.format_stage_time()}"
+        )
 
         stats_bar.remove_class("working")
         if not failed:
@@ -437,14 +345,17 @@ class PipelineRunnerMixin:
             pill.remove_class("pill-rerunnable")
 
         from_idx = RERUN_ORDER.index(from_stage_name)
-
         for pill in pills[from_idx:]:
             pill.update_status(StageStatus.PENDING)
 
         prev_name = STAGE_PREV.get(from_stage_name)
         prev_output = self._stage_outputs.get(prev_name, "") if prev_name else ""
         prompt = self._last_prompt
-        decomposed_tasks = self._last_decomposed_tasks if from_idx > RERUN_ORDER.index("Decomposition") else []
+        decomposed_tasks = (
+            self._last_decomposed_tasks
+            if from_idx > RERUN_ORDER.index("Decomposition")
+            else []
+        )
 
         fresh_stages = {s.name: s for s in create_stages()}
         failed = False
@@ -465,7 +376,10 @@ class PipelineRunnerMixin:
 
             if stage_name == "Decomposition":
                 self._set_stream_header("Decomposition — splitting tasks…")
-                self._write_log(f"\n[bold yellow]▶ Decomposition[/bold yellow] [dim](manager splitting tasks)[/dim]")
+                self._write_log(
+                    f"\n[bold yellow]▶ Decomposition[/bold yellow] "
+                    f"[dim](manager splitting tasks)[/dim]"
+                )
                 stage.start()
                 decomposed_tasks = await decompose_task(prompt, prev_output, self.working_dir)
                 stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
@@ -490,12 +404,13 @@ class PipelineRunnerMixin:
 
                 output = await run_commit_pr_stage(
                     stage, prompt, prev_output, self.working_dir,
-                    on_stream=on_pr_stream,
-                    on_log=on_pr_log,
+                    on_stream=on_pr_stream, on_log=on_pr_log,
                 )
                 pill.update_status(stage.status, stage.elapsed)
                 if stage.status == StageStatus.COMPLETED:
-                    self._write_log(f"[green]✓ {stage_name}[/green] — {StagePill._fmt(stage.elapsed)}")
+                    self._write_log(
+                        f"[green]✓ {stage_name}[/green] — {StagePill._fmt(stage.elapsed)}"
+                    )
                     self._stage_outputs[stage_name] = output
                     prev_output = output
                 else:
@@ -546,10 +461,14 @@ class PipelineRunnerMixin:
                 def on_rerun_stream(chunk, _self=self):
                     _self._append_stream(chunk)
 
-                output = await run_stage(stage, prompt, prev_output, self.working_dir, on_stream=on_rerun_stream)
+                output = await run_stage(
+                    stage, prompt, prev_output, self.working_dir, on_stream=on_rerun_stream
+                )
                 pill.update_status(stage.status, stage.elapsed)
                 if stage.status == StageStatus.COMPLETED:
-                    self._write_log(f"[green]✓ {stage_name}[/green] — {StagePill._fmt(stage.elapsed)}")
+                    self._write_log(
+                        f"[green]✓ {stage_name}[/green] — {StagePill._fmt(stage.elapsed)}"
+                    )
                     preview = output[:300].strip()
                     if preview:
                         self._write_log(f"[dim]{preview}[/dim]\n")
@@ -561,7 +480,10 @@ class PipelineRunnerMixin:
                     break
 
         stats = pipeline_stats
-        final_stats = f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} | Time: {stats.format_stage_time()}"
+        final_stats = (
+            f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} "
+            f"| Time: {stats.format_stage_time()}"
+        )
 
         stats_bar.remove_class("working")
         if not failed:

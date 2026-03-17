@@ -14,7 +14,7 @@ from textual.widgets import Footer, Header, Label, RichLog, TextArea
 from app.models import pipeline_stats
 from app.runner import PipelineRunnerMixin
 from app.stages import StageStatus, create_stages
-from app.widgets import StagePill
+from app.widgets import StagePill, SystemMonitor
 
 
 class PipelineApp(PipelineRunnerMixin, App):
@@ -27,139 +27,14 @@ class PipelineApp(PipelineRunnerMixin, App):
         super().__init__(**kwargs)
 
     TITLE = "Dev Pipeline — Multi-Agent"
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-
-    /* ══ Stage pill bar ══ */
-    #stage-bar {
-        height: 5;
-        padding: 1 2;
-        background: $surface;
-        align: left middle;
-    }
-
-    /* Each stage card: rounded border, fixed height 3 */
-    .pill {
-        height: 3;
-        width: auto;
-        min-width: 18;
-        padding: 0 2;
-        background: $panel;
-        border: round $primary-background;
-        content-align: left middle;
-    }
-
-    /* Running — highlight border + slightly lighter bg */
-    .pill.pill-running {
-        border: round $warning;
-        background: $boost;
-    }
-
-    /* Completed — subtle green border */
-    .pill.pill-done {
-        border: round $success-darken-2;
-        background: $panel;
-    }
-
-    /* Failed — red border */
-    .pill.pill-failed {
-        border: round $error-darken-2;
-        background: $panel;
-    }
-
-    /* Clickable hover — signals re-run affordance */
-    .pill.pill-rerunnable:hover {
-        border: round $accent;
-        background: $boost;
-    }
-
-    /* Connector between pills: ──●── centered on the middle row */
-    .pill-sep {
-        height: 3;
-        width: 7;
-        content-align: center middle;
-        color: $text-muted;
-    }
-
-    /* ══ Stream pane ══ */
-    #stream-pane {
-        height: 10;
-        margin: 0 2;
-        border: round $primary-background;
-        background: $panel;
-    }
-
-    #stream-header {
-        height: 1;
-        padding: 0 1;
-        background: $primary-background 30%;
-        color: $text-muted;
-    }
-
-    #stream-log {
-        height: 1fr;
-        padding: 0 1;
-    }
-
-    /* ══ Input ══ */
-    #prompt-input {
-        margin: 0 2 0 2;
-        height: 5;
-        border: round $primary-background;
-    }
-
-    #prompt-hint {
-        margin: 0 2;
-        height: 1;
-        color: $text-muted;
-    }
-
-    /* ══ Activity log ══ */
-    #log-container {
-        margin: 0 2 0 2;
-        height: 1fr;
-        border: round $primary-background;
-    }
-
-    /* ══ Stats bar ══ */
-    #stats-bar {
-        dock: bottom;
-        height: 1;
-        padding: 0 2;
-        background: $panel;
-        color: $text-muted;
-    }
-
-    #stats-bar.working {
-        background: $warning 20%;
-        color: $warning;
-    }
-
-    #stats-bar.success {
-        background: $success 20%;
-        color: $success;
-    }
-
-    #stats-bar.error {
-        background: $error 20%;
-        color: $error;
-    }
-
-    /* ══ Repo label ══ */
-    #repo-label {
-        padding: 0 2;
-        color: $text-muted;
-        height: 1;
-    }
-    """
+    CSS_PATH = "styles.tcss"
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear_log", "Clear Log"),
         Binding("ctrl+enter", "submit_prompt", "Run", key_display="ctrl+↵"),
         Binding("ctrl+e", "export_log", "Export Log"),
+        Binding("ctrl+m", "toggle_monitor", "Monitor"),
     ]
 
     _log_buffer: list[str] = []
@@ -178,6 +53,7 @@ class PipelineApp(PipelineRunnerMixin, App):
                 if i < len(stages) - 1:
                     yield Label("──●──", classes="pill-sep")
         yield Label(f"  {self.working_dir}", id="repo-label")
+        yield SystemMonitor(id="monitor-panel", classes="hidden")
         yield TextArea(id="prompt-input", soft_wrap=True)
         yield Label("  Ctrl+Enter to run  |  paste markdown/code freely", id="prompt-hint")
         with Vertical(id="stream-pane"):
@@ -189,6 +65,7 @@ class PipelineApp(PipelineRunnerMixin, App):
 
     def on_mount(self) -> None:
         self.set_interval(1.0, self._refresh_stats)
+        self.set_interval(1.0, self._refresh_monitor)
         if self.prompt_file:
             import os
             try:
@@ -207,6 +84,22 @@ class PipelineApp(PipelineRunnerMixin, App):
         stats_bar.update(
             f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} | Time: {stats.format_elapsed()}"
         )
+
+    def _refresh_monitor(self) -> None:
+        try:
+            monitor = self.query_one("#monitor-panel", SystemMonitor)
+            if not monitor.has_class("hidden"):
+                monitor.refresh_data()
+        except NoMatches:
+            pass
+
+    def action_toggle_monitor(self) -> None:
+        monitor = self.query_one("#monitor-panel", SystemMonitor)
+        if monitor.has_class("hidden"):
+            monitor.remove_class("hidden")
+            monitor.refresh_data()
+        else:
+            monitor.add_class("hidden")
 
     def _set_stream_header(self, text: str) -> None:
         try:
