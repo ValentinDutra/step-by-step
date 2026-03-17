@@ -1,7 +1,9 @@
 """Pipeline stage runners."""
 
-from app.agents import Task, call_claude, run_workers_parallel, aggregate_results
+from app.claude import call_claude
+from app.models import Task
 from app.stages import Stage, StageStatus
+from app.workers import run_workers_parallel, aggregate_results
 
 
 async def run_stage(
@@ -46,22 +48,21 @@ async def run_stage_parallel(
     stage.start()
     stage.tasks = tasks
 
-    worker_prompts = []
-    for task in tasks:
-        wp = stage.worker_prompt_template.format(
+    worker_prompts = [
+        stage.worker_prompt_template.format(
             prompt=prompt,
             task_description=task.description,
             task_files=", ".join(task.files) if task.files else "as needed",
             prev_output=prev_output[:6000],
             iteration_context=iteration_context,
         )
-        worker_prompts.append(wp)
+        for task in tasks
+    ]
 
     results = await run_workers_parallel(
         tasks,
         worker_prompts,
         working_dir,
-        max_concurrent=len(tasks),
         on_start=on_worker_start,
         on_complete=on_worker_complete,
         on_stream=on_stream,
