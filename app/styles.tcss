@@ -93,28 +93,27 @@ Screen {
     border: round $primary-background;
 }
 
-/* ══ Stats bar ══ */
-#stats-bar {
+/* ══ Custom footer ══ */
+#app-footer {
     dock: bottom;
     height: 1;
-    padding: 0 2;
     background: $panel;
+}
+
+#footer-keys {
+    width: 1fr;
+    height: 1;
+    padding: 0 1;
     color: $text-muted;
+    content-align: left middle;
 }
 
-#stats-bar.working {
-    background: $warning 20%;
-    color: $warning;
-}
-
-#stats-bar.success {
-    background: $success 20%;
-    color: $success;
-}
-
-#stats-bar.error {
-    background: $error 20%;
-    color: $error;
+#stats-bar {
+    width: auto;
+    height: 1;
+    padding: 0 2;
+    color: $text-muted;
+    content-align: right middle;
 }
 
 /* ══ Repo label ══ */

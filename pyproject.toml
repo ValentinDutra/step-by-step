@@ -1,5 +1,5 @@
 [project]
-name = "step-by-step"
+name = "step-by-step-cli"
 version = "0.1.0"
 description = "LLM Development Pipeline UI - GitHub Actions-style visual dashboard for LLM-driven workflows"
 readme = "README.md"
