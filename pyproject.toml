@@ -2,11 +2,32 @@
 name = "step-by-step"
 version = "0.1.0"
 description = "LLM Development Pipeline UI - GitHub Actions-style visual dashboard for LLM-driven workflows"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Valentin Dutra" }]
 requires-python = ">=3.13"
+keywords = ["llm", "ai", "cli", "tui", "pipeline", "claude", "automation", "developer-tools"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Terminals",
+]
 dependencies = [
+    "psutil>=5.9.0",
     "python-dotenv>=1.2.2",
     "textual>=8.1.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ValentinDutra/step-by-step"
+Repository = "https://github.com/ValentinDutra/step-by-step"
+Issues = "https://github.com/ValentinDutra/step-by-step/issues"
 
 [project.scripts]
 pipeline = "app.tui:main"
