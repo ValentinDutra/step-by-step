@@ -1,6 +1,6 @@
 {
   "name": "step-by-step-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "LLM Development Pipeline UI — GitHub Actions-style multi-agent pipeline powered by Claude",
   "keywords": [
     "llm",
