@@ -14,10 +14,10 @@ function has(cmd) {
 }
 
 if (has("uvx")) {
-  const result = spawnSync("uvx", ["step-by-step-cli", ...args], { stdio: "inherit" });
+  const result = spawnSync("uvx", ["--from", "step-by-step-cli", "pipeline", ...args], { stdio: "inherit" });
   process.exit(result.status ?? 1);
 } else if (has("pipx")) {
-  const result = spawnSync("pipx", ["run", "step-by-step-cli", ...args], { stdio: "inherit" });
+  const result = spawnSync("pipx", ["run", "--spec", "step-by-step-cli", "pipeline", ...args], { stdio: "inherit" });
   process.exit(result.status ?? 1);
 } else {
   console.error(
