@@ -56,3 +56,76 @@ def test_phase_provider_override(tmp_path, monkeypatch):
     config = {"phases": {"Planning": {"provider": "gemini"}}}
     stages = {s.name: s for s in resolve_pipeline(config, str(tmp_path))}
     assert stages["Planning"].provider.name == "gemini"
+
+
+def test_empty_pipeline_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    with pytest.raises(ValueError, match="empty"):
+        resolve_pipeline({"pipeline": []}, str(tmp_path))
+
+
+def test_duplicate_names_fail(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    with pytest.raises(ValueError, match="Duplicate"):
+        resolve_pipeline({"pipeline": ["Planning", "Planning"]}, str(tmp_path))
+
+
+def test_parallel_without_decompose_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    with pytest.raises(ValueError, match="requires a 'decompose'"):
+        resolve_pipeline({"pipeline": ["Planning", "Implementation"]}, str(tmp_path))
+
+
+def test_more_than_one_commit_pr_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    config = {
+        "pipeline": ["Commit & PR", "Publish"],
+        "phases": {"Publish": {"kind": "commit_pr", "prompt": "ship it"}},
+    }
+    with pytest.raises(ValueError, match="commit_pr"):
+        resolve_pipeline(config, str(tmp_path))
+
+
+def test_more_than_one_gate_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    config = {
+        "pipeline": ["Code Quality", "Review"],
+        "phases": {"Review": {"kind": "gate", "prompt": "review"}},
+    }
+    with pytest.raises(ValueError, match="gate"):
+        resolve_pipeline(config, str(tmp_path))
+
+
+def test_custom_non_simple_kind_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    config = {
+        "pipeline": ["Research"],
+        "phases": {"Research": {"kind": "decompose", "prompt": "x"}},
+    }
+    with pytest.raises(ValueError, match="must be kind 'simple'"):
+        resolve_pipeline(config, str(tmp_path))
+
+
+def test_both_skill_and_prompt_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    _write_skill(tmp_path, "x", "body\n")
+    config = {"phases": {"Planning": {"skill": "x", "prompt": "y"}}}
+    with pytest.raises(ValueError, match="both 'skill' and 'prompt'"):
+        resolve_pipeline(config, str(tmp_path))
+
+
+def test_custom_phase_without_skill_or_prompt_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    config = {"pipeline": ["Research"], "phases": {"Research": {"kind": "simple"}}}
+    with pytest.raises(ValueError, match="must declare a 'skill' or 'prompt'"):
+        resolve_pipeline(config, str(tmp_path))
+
+
+def test_leftover_table_for_dropped_phase_is_ignored(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    config = {
+        "pipeline": ["Planning", "Documentation"],
+        "phases": {"Tests & Validation": {"provider": "gemini"}},
+    }
+    stages = resolve_pipeline(config, str(tmp_path))  # must not raise
+    assert [s.name for s in stages] == ["Planning", "Documentation"]

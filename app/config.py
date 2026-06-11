@@ -108,7 +108,10 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
 
     phases = config.get("phases", {})
     registry = {stage.name: stage for stage in STAGES}
-    names = config.get("pipeline") or [stage.name for stage in STAGES]
+    if "pipeline" in config:
+        names = config["pipeline"]
+    else:
+        names = [stage.name for stage in STAGES]
 
     stages: list[Stage] = []
     for name in names:
@@ -151,7 +154,59 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
             )
         )
 
+    _validate_pipeline(stages, phases, registry)
     return stages
+
+
+def _validate_pipeline(
+    stages: list[Stage], phases: dict, registry: dict[str, Stage]
+) -> None:
+    """Fail-fast structural validation of the resolved pipeline."""
+    if not stages:
+        raise ValueError("Pipeline is empty; at least one phase is required.")
+
+    names = [stage.name for stage in stages]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(
+            f"Duplicate phase name(s) in pipeline: {', '.join(duplicates)}"
+        )
+
+    if sum(1 for stage in stages if stage.kind == "commit_pr") > 1:
+        raise ValueError(
+            "Pipeline has more than one 'commit_pr' phase; at most one is allowed."
+        )
+    if sum(1 for stage in stages if stage.kind == "gate") > 1:
+        raise ValueError(
+            "Pipeline has more than one 'gate' phase; at most one is allowed."
+        )
+
+    seen_decompose = False
+    for stage in stages:
+        if stage.kind == "decompose":
+            seen_decompose = True
+        if stage.kind == "parallel" and not seen_decompose:
+            raise ValueError(
+                f"Phase '{stage.name}' (parallel) requires a 'decompose' phase before it."
+            )
+
+    for stage in stages:
+        entry = phases.get(stage.name, {})
+        has_skill = "skill" in entry
+        has_prompt = "prompt" in entry
+        if has_skill and has_prompt:
+            raise ValueError(
+                f"Phase '{stage.name}' declares both 'skill' and 'prompt'; declare exactly one."
+            )
+        if stage.name not in registry:  # custom phase
+            if stage.kind != "simple":
+                raise ValueError(
+                    f"Custom phase '{stage.name}' must be kind 'simple', got '{stage.kind}'."
+                )
+            if not has_skill and not has_prompt:
+                raise ValueError(
+                    f"Custom phase '{stage.name}' must declare a 'skill' or 'prompt'."
+                )
 
 
 def preflight(resolved: dict[str, tuple[LLMProvider, str]]) -> list[str]:
