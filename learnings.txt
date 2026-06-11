@@ -1,0 +1,8 @@
+# Ralph learnings — Codex & Gemini per-phase providers (#16)
+
+- Runner: `uv run python ...` and `uv run pytest`. Python 3.13.11, uv 0.8.15.
+- Gemini headless needs BOTH `GEMINI_API_KEY` (set in ~/.zshrc) AND `GEMINI_CLI_TRUST_WORKSPACE=true` (or `--skip-trust`), else it refuses in untrusted dirs. Verified gemini 0.46.0.
+- `gemini --output-format json` returns ONE buffered object `{session_id, response, stats}` (not JSONL). Parse `.response`.
+- codex 0.139.0 authed via ~/.codex/auth.json. Prompt via stdin uses `codex exec - --json`.
+- Bash calls print a harmless zoxide config warning; ignore it.
+- Dataclass/Protocol style lives in app/models.py; providers in app/providers/.
