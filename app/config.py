@@ -16,6 +16,8 @@ from app.providers.base import LLMProvider
 from app.providers.claude import ClaudeProvider
 from app.providers.codex import CodexProvider
 from app.providers.gemini import GeminiProvider
+from app.skills import load_skill
+from app.stages import STAGES, Stage
 
 _PROVIDERS = {
     "claude": ClaudeProvider,
@@ -87,6 +89,69 @@ def resolve_providers(
         model = entry.get("model", default_model)
         resolved[phase_name] = (provider_for(name, model), model)
     return resolved
+
+
+def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
+    """Build the ordered list of stages for the configured pipeline.
+
+    Absent a ``pipeline`` key, the built-in phases run in their default order.
+    Each phase's provider/model follows the same precedence as
+    ``resolve_providers``; a built-in phase takes its kind/templates from the
+    registry, while a custom phase is ``simple`` and supplies its prompt via a
+    ``skill`` folder or an inline ``prompt``. Validation lives in
+    ``_validate_pipeline``.
+    """
+    defaults = config.get("defaults", {})
+    default_provider = defaults.get("provider", "claude")
+    default_model = defaults.get("model", "")
+    provider_for(default_provider, default_model)  # validate the default eagerly
+
+    phases = config.get("phases", {})
+    registry = {stage.name: stage for stage in STAGES}
+    names = config.get("pipeline") or [stage.name for stage in STAGES]
+
+    stages: list[Stage] = []
+    for name in names:
+        entry = phases.get(name, {})
+        provider_name = entry.get("provider", default_provider)
+        model = entry.get("model", default_model)
+        provider = provider_for(provider_name, model)
+
+        builtin = registry.get(name)
+        if builtin is not None:
+            kind = builtin.kind
+            prompt_template = builtin.prompt_template
+            worker_prompt_template = builtin.worker_prompt_template
+            iterable = builtin.iterable
+            parallel = builtin.parallel
+        else:
+            kind = entry.get("kind", "simple")
+            prompt_template = ""
+            worker_prompt_template = ""
+            iterable = False
+            parallel = False
+
+        if "skill" in entry:
+            prompt_template = load_skill(entry["skill"], repo_dir)
+        elif "prompt" in entry:
+            prompt_template = entry["prompt"]
+
+        stages.append(
+            Stage(
+                name=name,
+                prompt_template=prompt_template,
+                worker_prompt_template=worker_prompt_template,
+                iterable=iterable,
+                parallel=parallel,
+                provider=provider,
+                provider_name=provider.name,
+                model=model,
+                kind=kind,
+                max_iterations=entry.get("max_iterations", 3),
+            )
+        )
+
+    return stages
 
 
 def preflight(resolved: dict[str, tuple[LLMProvider, str]]) -> list[str]:
