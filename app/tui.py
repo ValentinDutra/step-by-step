@@ -8,6 +8,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical
 from textual.css.query import NoMatches
 from textual.reactive import var
+from textual.screen import ModalScreen
 from textual.widgets import Header, Label, RichLog, Static, TextArea
 
 from app.config import load_config, resolve_pipeline
@@ -20,11 +21,12 @@ from app.widgets import StagePill, SystemMonitor
 class PipelineApp(PipelineRunnerMixin, App):
     """Multi-agent Dev Pipeline TUI."""
 
-    def __init__(self, working_dir: str = "", prompt_file: str = "", config_path: str = "", **kwargs):
+    def __init__(self, working_dir: str = "", prompt_file: str = "", config_path: str = "", step_mode: bool = False, **kwargs):
         import os
         self.working_dir = working_dir or os.getcwd()
         self.prompt_file = prompt_file
         self.config_path = config_path
+        self.step_mode = step_mode
         super().__init__(**kwargs)
 
     TITLE = "Dev Pipeline — Multi-Agent"
@@ -36,6 +38,7 @@ class PipelineApp(PipelineRunnerMixin, App):
         Binding("ctrl+enter", "submit_prompt", "Run", key_display="ctrl+↵"),
         Binding("ctrl+e", "export_log", "Export Log"),
         Binding("ctrl+m", "toggle_monitor", "Monitor"),
+        Binding("ctrl+x", "cancel_run", "Cancel"),
     ]
 
     _log_buffer: list[str] = []
@@ -78,7 +81,7 @@ class PipelineApp(PipelineRunnerMixin, App):
             yield Static(
                 " [dim]^p[/dim] palette  [dim]^l[/dim] Clear Log"
                 "  [dim]ctrl+↵[/dim] Run  [dim]^e[/dim] Export Log"
-                "  [dim]^m[/dim] Monitor",
+                "  [dim]^m[/dim] Monitor  [dim]^x[/dim] Cancel",
                 id="footer-keys",
             )
             yield Label("Calls: 0  |  Cost: $0.000  |  Time: 0s", id="stats-bar")
@@ -165,6 +168,23 @@ class PipelineApp(PipelineRunnerMixin, App):
             f.write(plain)
         self._write_log(f"[green]Log exported →[/green] {path}")
 
+    def action_cancel_run(self) -> None:
+        if not self.running:
+            return
+        self.workers.cancel_all()
+        while isinstance(self.screen, ModalScreen):
+            self.pop_screen()
+        self.running = False
+        self.query_one("#prompt-input", TextArea).disabled = False
+        stats_bar = self.query_one("#stats-bar", Label)
+        stats_bar.remove_class("working", "success")
+        stats_bar.add_class("error")
+        stats_bar.update("Cancelled")
+        self._set_stream_header("Cancelled")
+        self._write_log("[red]✗ Run cancelled by user[/red]")
+        for pill in self.query(StagePill):
+            pill.add_class("pill-rerunnable")
+
     def on_stage_pill_clicked(self, event: StagePill.Clicked) -> None:
         if self.running or not self._last_prompt:
             return
@@ -179,6 +199,8 @@ def main():
     parser.add_argument("repo", nargs="?", default=os.getcwd(), help="Path to the target repository (default: current directory)")
     parser.add_argument("-f", "--prompt-file", default="", metavar="FILE", help="Read prompt from FILE and start pipeline immediately")
     parser.add_argument("--config", default="", metavar="PATH", help="Path to a step-by-step.toml provider config (overrides project/user config)")
+    parser.add_argument("--check", action="store_true", help="Validate the config and print the resolved pipeline without running anything")
+    parser.add_argument("--step", action="store_true", help="Pause after each completed stage until you confirm")
     args = parser.parse_args()
 
     repo = os.path.abspath(os.path.expanduser(args.repo))
@@ -200,7 +222,12 @@ def main():
             print(f"Error: config file '{config_path}' not found")
             raise SystemExit(1)
 
-    app = PipelineApp(working_dir=repo, prompt_file=prompt_file, config_path=config_path)
+    if args.check:
+        from app.check import run_check
+
+        raise SystemExit(run_check(repo, config_path))
+
+    app = PipelineApp(working_dir=repo, prompt_file=prompt_file, config_path=config_path, step_mode=args.step)
     app.run()
 
 

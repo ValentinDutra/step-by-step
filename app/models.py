@@ -82,4 +82,15 @@ class PipelineStats:
         return base
 
 
+def filter_tasks(tasks: list[Task], selected_ids: list[int]) -> list[Task]:
+    """Keep only the tasks whose id is in ``selected_ids``, preserving order."""
+    selected = set(selected_ids)
+    return [task for task in tasks if task.id in selected]
+
+
+def cost_cap_exceeded(stats: PipelineStats, max_cost_usd: float | None) -> bool:
+    """True when a configured cost cap exists and accumulated cost reached it."""
+    return max_cost_usd is not None and stats.total_cost_usd >= max_cost_usd
+
+
 pipeline_stats = PipelineStats()

@@ -6,8 +6,6 @@ import json
 from app.models import pipeline_stats
 from app.providers.base import ProviderResult
 
-_CLAUDE_TIMEOUT = 600  # seconds per subprocess call
-
 
 def parse_claude_stream_json(lines: list[str]) -> ProviderResult:
     """Parse Claude Code ``stream-json`` lines into a :class:`ProviderResult`.
@@ -52,22 +50,32 @@ class ClaudeProvider:
 
     name = "claude"
 
-    def __init__(self, model: str = "") -> None:
+    def __init__(
+        self,
+        model: str = "",
+        timeout_seconds: int = 600,
+        skip_permissions: bool = True,
+        extra_args: tuple[str, ...] = (),
+    ) -> None:
         self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.skip_permissions = skip_permissions
+        self.extra_args = tuple(extra_args)
+
+    def _build_cmd(self) -> list[str]:
+        cmd = ["claude", "--print"]
+        if self.skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+        cmd += ["--output-format", "stream-json", "--verbose"]
+        if self.model:
+            cmd += ["--model", self.model]
+        cmd += list(self.extra_args)
+        return cmd
 
     async def run(
         self, prompt: str, working_dir: str, on_stream=None
     ) -> ProviderResult:
-        cmd = [
-            "claude",
-            "--print",
-            "--dangerously-skip-permissions",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-        ]
-        if self.model:
-            cmd += ["--model", self.model]
+        cmd = self._build_cmd()
 
         proc = None
         stderr_task: asyncio.Task | None = None
@@ -98,7 +106,7 @@ class ClaudeProvider:
             lines: list[str] = []
             buf = b""
             try:
-                async with asyncio.timeout(_CLAUDE_TIMEOUT):
+                async with asyncio.timeout(self.timeout_seconds):
                     while True:
                         raw_chunk = await proc.stdout.read(65536)
                         if not raw_chunk:
@@ -120,7 +128,7 @@ class ClaudeProvider:
                                         await _emit(on_stream, block["text"])
             except asyncio.TimeoutError:
                 return ProviderResult(
-                    False, "", error=f"Timeout after {_CLAUDE_TIMEOUT}s", cost_usd=None
+                    False, "", error=f"Timeout after {self.timeout_seconds}s", cost_usd=None
                 )
 
             await stderr_task

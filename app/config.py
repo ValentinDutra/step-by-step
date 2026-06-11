@@ -10,6 +10,7 @@ Precedence (first existing wins):
 import os
 import shutil
 import tomllib
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 from app.providers.base import LLMProvider
@@ -36,13 +37,166 @@ _INSTALL_HINTS = {
 _DEFAULT_CONFIG = {"defaults": {"provider": "claude", "model": ""}}
 
 
-def provider_for(name: str, model: str) -> LLMProvider:
+@dataclass(frozen=True)
+class Limits:
+    provider_timeout_seconds: int = 600
+    max_ram_pct: float = 75.0
+    max_cost_usd: float | None = None
+    default_max_iterations: int = 3
+    prev_output_chars: int = 8000
+    worker_prev_output_chars: int = 6000
+    evaluation_output_chars: int = 4000
+    commit_context_chars: int = 3000
+    diff_stat_chars: int = 1500
+    feedback_chars: int = 3000
+
+
+@dataclass(frozen=True)
+class Confirm:
+    phases: tuple[str, ...] = ()
+    review_tasks: bool = False
+    step: bool = False
+
+
+def resolve_confirm(config: dict, stage_names: list[str]) -> Confirm:
+    """Build :class:`Confirm` from the optional ``[confirm]`` section.
+
+    ``phases`` entries must name phases present in the resolved pipeline.
+    """
+    section = config.get("confirm", {})
+    valid_keys = [field.name for field in fields(Confirm)]
+    unknown = sorted(set(section) - set(valid_keys))
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in [confirm]: {', '.join(unknown)}. "
+            f"Valid keys: {', '.join(valid_keys)}"
+        )
+    phases = section.get("phases", [])
+    if not isinstance(phases, list) or not all(isinstance(name, str) for name in phases):
+        raise ValueError(f"[confirm] phases must be a list of strings, got {phases!r}")
+    unknown_phases = sorted(set(phases) - set(stage_names))
+    if unknown_phases:
+        raise ValueError(
+            f"[confirm] phases name(s) not in the pipeline: {', '.join(unknown_phases)}. "
+            f"Valid phases: {', '.join(stage_names)}"
+        )
+    for key in ("review_tasks", "step"):
+        if not isinstance(section.get(key, False), bool):
+            raise ValueError(f"[confirm] {key} must be a boolean, got {section[key]!r}")
+    return Confirm(
+        phases=tuple(phases),
+        review_tasks=section.get("review_tasks", False),
+        step=section.get("step", False),
+    )
+
+
+@dataclass(frozen=True)
+class Artifacts:
+    enabled: bool = False
+    dir: str = ".step-by-step/runs"
+
+
+def resolve_artifacts(config: dict) -> Artifacts:
+    """Build :class:`Artifacts` from the optional ``[artifacts]`` section."""
+    section = config.get("artifacts", {})
+    valid_keys = [field.name for field in fields(Artifacts)]
+    unknown = sorted(set(section) - set(valid_keys))
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in [artifacts]: {', '.join(unknown)}. "
+            f"Valid keys: {', '.join(valid_keys)}"
+        )
+    enabled = section.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError(f"[artifacts] enabled must be a boolean, got {enabled!r}")
+    directory = section.get("dir", Artifacts.dir)
+    if not isinstance(directory, str) or not directory:
+        raise ValueError(f"[artifacts] dir must be a non-empty string, got {directory!r}")
+    return Artifacts(enabled=enabled, dir=directory)
+
+
+_FLOAT_LIMIT_KEYS = {"max_ram_pct", "max_cost_usd"}
+
+
+def _is_positive_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value > 0
+    )
+
+
+def resolve_limits(config: dict) -> Limits:
+    """Build :class:`Limits` from the optional ``[limits]`` section.
+
+    Unknown keys and out-of-range values fail fast so a typo never silently
+    falls back to a default.
+    """
+    section = config.get("limits", {})
+    valid_keys = [field.name for field in fields(Limits)]
+    unknown = sorted(set(section) - set(valid_keys))
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in [limits]: {', '.join(unknown)}. "
+            f"Valid keys: {', '.join(valid_keys)}"
+        )
+
+    resolved: dict = {}
+    for key, value in section.items():
+        if key in _FLOAT_LIMIT_KEYS:
+            if not _is_positive_number(value) or (key == "max_ram_pct" and value > 100):
+                expected = "a number in (0, 100]" if key == "max_ram_pct" else "a positive number"
+                raise ValueError(f"[limits] {key} must be {expected}, got {value!r}")
+            resolved[key] = float(value)
+        else:
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(
+                    f"[limits] {key} must be a positive integer, got {value!r}"
+                )
+            resolved[key] = value
+    return Limits(**resolved)
+
+
+def provider_for(
+    name: str,
+    model: str,
+    timeout_seconds: int = 600,
+    skip_permissions: bool = True,
+    extra_args: tuple[str, ...] = (),
+) -> LLMProvider:
     """Build the provider for ``name``, or raise ``ValueError`` if unknown."""
     cls = _PROVIDERS.get(name)
     if cls is None:
         valid = ", ".join(sorted(_PROVIDERS))
         raise ValueError(f"Unknown provider '{name}'. Valid providers: {valid}")
-    return cls(model)
+    return cls(
+        model,
+        timeout_seconds=timeout_seconds,
+        skip_permissions=skip_permissions,
+        extra_args=extra_args,
+    )
+
+
+def _provider_flags(
+    table: dict,
+    context: str,
+    fallback_skip_permissions: bool = True,
+    fallback_extra_args: tuple[str, ...] = (),
+) -> tuple[bool, tuple[str, ...]]:
+    """Read and validate ``skip_permissions``/``extra_args`` from a config table."""
+    skip_permissions = table.get("skip_permissions", fallback_skip_permissions)
+    if not isinstance(skip_permissions, bool):
+        raise ValueError(
+            f"{context}: skip_permissions must be a boolean, got {skip_permissions!r}"
+        )
+    extra_args = table.get("extra_args", list(fallback_extra_args))
+    if not isinstance(extra_args, list) or not all(
+        isinstance(argument, str) for argument in extra_args
+    ):
+        raise ValueError(
+            f"{context}: extra_args must be a list of strings, got {extra_args!r}"
+        )
+    return skip_permissions, tuple(extra_args)
 
 
 def _user_config_path() -> Path:
@@ -50,8 +204,8 @@ def _user_config_path() -> Path:
     return Path(base) / "step-by-step" / "config.toml"
 
 
-def load_config(repo_dir: str, explicit_path: str | None = None) -> dict:
-    """Return the first existing config in precedence order, else the default."""
+def find_config_path(repo_dir: str, explicit_path: str | None = None) -> Path | None:
+    """Return the first existing config file in precedence order, or ``None``."""
     candidates: list[Path] = []
     if explicit_path:
         candidates.append(Path(explicit_path))
@@ -59,9 +213,17 @@ def load_config(repo_dir: str, explicit_path: str | None = None) -> dict:
     candidates.append(_user_config_path())
     for path in candidates:
         if path.is_file():
-            with open(path, "rb") as handle:
-                return tomllib.load(handle)
-    return {"defaults": dict(_DEFAULT_CONFIG["defaults"])}
+            return path
+    return None
+
+
+def load_config(repo_dir: str, explicit_path: str | None = None) -> dict:
+    """Return the first existing config in precedence order, else the default."""
+    path = find_config_path(repo_dir, explicit_path)
+    if path is None:
+        return {"defaults": dict(_DEFAULT_CONFIG["defaults"])}
+    with open(path, "rb") as handle:
+        return tomllib.load(handle)
 
 
 def resolve_providers(
@@ -72,6 +234,8 @@ def resolve_providers(
     default_provider = defaults.get("provider", "claude")
     default_model = defaults.get("model", "")
     provider_for(default_provider, default_model)  # validate the default eagerly
+    limits = resolve_limits(config)
+    default_skip_permissions, default_extra_args = _provider_flags(defaults, "[defaults]")
 
     phases = config.get("phases", {})
     valid = set(phase_names)
@@ -87,7 +251,22 @@ def resolve_providers(
         entry = phases.get(phase_name, {})
         name = entry.get("provider", default_provider)
         model = entry.get("model", default_model)
-        resolved[phase_name] = (provider_for(name, model), model)
+        skip_permissions, extra_args = _provider_flags(
+            entry,
+            f"Phase '{phase_name}'",
+            fallback_skip_permissions=default_skip_permissions,
+            fallback_extra_args=default_extra_args,
+        )
+        resolved[phase_name] = (
+            provider_for(
+                name,
+                model,
+                timeout_seconds=limits.provider_timeout_seconds,
+                skip_permissions=skip_permissions,
+                extra_args=extra_args,
+            ),
+            model,
+        )
     return resolved
 
 
@@ -106,6 +285,8 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
     default_model = defaults.get("model", "")
     provider_for(default_provider, default_model)  # validate the default eagerly
 
+    limits = resolve_limits(config)
+    default_skip_permissions, default_extra_args = _provider_flags(defaults, "[defaults]")
     phases = config.get("phases", {})
     registry = {stage.name: stage for stage in STAGES}
     if "pipeline" in config:
@@ -118,7 +299,19 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
         entry = phases.get(name, {})
         provider_name = entry.get("provider", default_provider)
         model = entry.get("model", default_model)
-        provider = provider_for(provider_name, model)
+        skip_permissions, extra_args = _provider_flags(
+            entry,
+            f"Phase '{name}'",
+            fallback_skip_permissions=default_skip_permissions,
+            fallback_extra_args=default_extra_args,
+        )
+        provider = provider_for(
+            provider_name,
+            model,
+            timeout_seconds=limits.provider_timeout_seconds,
+            skip_permissions=skip_permissions,
+            extra_args=extra_args,
+        )
 
         builtin = registry.get(name)
         if builtin is not None:
@@ -139,18 +332,25 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
         elif "prompt" in entry:
             prompt_template = entry["prompt"]
 
+        eval_prompt_template = ""
+        if "eval_skill" in entry:
+            eval_prompt_template = load_skill(entry["eval_skill"], repo_dir)
+        elif "eval_prompt" in entry:
+            eval_prompt_template = entry["eval_prompt"]
+
         stages.append(
             Stage(
                 name=name,
                 prompt_template=prompt_template,
                 worker_prompt_template=worker_prompt_template,
+                eval_prompt_template=eval_prompt_template,
                 iterable=iterable,
                 parallel=parallel,
                 provider=provider,
                 provider_name=provider.name,
                 model=model,
                 kind=kind,
-                max_iterations=entry.get("max_iterations", 3),
+                max_iterations=entry.get("max_iterations", limits.default_max_iterations),
             )
         )
 
@@ -197,6 +397,17 @@ def _validate_pipeline(
         if has_skill and has_prompt:
             raise ValueError(
                 f"Phase '{stage.name}' declares both 'skill' and 'prompt'; declare exactly one."
+            )
+        has_eval_skill = "eval_skill" in entry
+        has_eval_prompt = "eval_prompt" in entry
+        if has_eval_skill and has_eval_prompt:
+            raise ValueError(
+                f"Phase '{stage.name}' declares both 'eval_skill' and 'eval_prompt'; declare exactly one."
+            )
+        if (has_eval_skill or has_eval_prompt) and stage.kind != "gate":
+            raise ValueError(
+                f"Phase '{stage.name}' declares an evaluation prompt but is kind "
+                f"'{stage.kind}'; only 'gate' phases use one."
             )
         if stage.name not in registry:  # custom phase
             if stage.kind != "simple":

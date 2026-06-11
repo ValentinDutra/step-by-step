@@ -7,8 +7,6 @@ import os
 from app.models import pipeline_stats
 from app.providers.base import ProviderResult
 
-_GEMINI_TIMEOUT = 600  # seconds per subprocess call
-
 
 def parse_gemini_json(text: str) -> ProviderResult:
     """Parse the single buffered JSON object ``gemini --output-format json`` emits.
@@ -66,8 +64,26 @@ class GeminiProvider:
 
     name = "gemini"
 
-    def __init__(self, model: str = "") -> None:
+    def __init__(
+        self,
+        model: str = "",
+        timeout_seconds: int = 600,
+        skip_permissions: bool = True,
+        extra_args: tuple[str, ...] = (),
+    ) -> None:
         self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.skip_permissions = skip_permissions
+        self.extra_args = tuple(extra_args)
+
+    def _build_cmd(self, prompt: str) -> list[str]:
+        cmd = ["gemini", "-p", prompt]
+        if self.skip_permissions:
+            cmd.append("--yolo")
+        if self.model:
+            cmd += ["-m", self.model]
+        cmd += list(self.extra_args)
+        return cmd
 
     async def _spawn(
         self, args: list[str], working_dir: str
@@ -88,10 +104,10 @@ class GeminiProvider:
                 env=env,
             )
             try:
-                async with asyncio.timeout(_GEMINI_TIMEOUT):
+                async with asyncio.timeout(self.timeout_seconds):
                     stdout, stderr = await proc.communicate()
             except asyncio.TimeoutError:
-                return None, "", f"Timeout after {_GEMINI_TIMEOUT}s"
+                return None, "", f"Timeout after {self.timeout_seconds}s"
             return (
                 proc.returncode,
                 stdout.decode(errors="replace"),
@@ -112,9 +128,7 @@ class GeminiProvider:
     async def run(
         self, prompt: str, working_dir: str, on_stream=None
     ) -> ProviderResult:
-        base = ["gemini", "-p", prompt, "--yolo"]
-        if self.model:
-            base += ["-m", self.model]
+        base = self._build_cmd(prompt)
 
         rc, out, err = await self._spawn(base + ["--output-format", "json"], working_dir)
         if rc is None:

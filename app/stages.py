@@ -24,6 +24,7 @@ class Stage:
     iterable: bool = False
     parallel: bool = False
     worker_prompt_template: str = ""
+    eval_prompt_template: str = ""
     provider: LLMProvider | None = None
     provider_name: str = "claude"
     model: str = ""
@@ -57,7 +58,7 @@ VALID_KINDS = {"simple", "decompose", "parallel", "gate", "commit_pr"}
 
 STAGES = [
     Stage(name="Planning",          prompt_template=p.PLANNING, kind="simple"),
-    Stage(name="Decomposition",     prompt_template="", kind="decompose"),
+    Stage(name="Decomposition",     prompt_template=p.DECOMPOSITION, kind="decompose"),
     Stage(name="Implementation",    prompt_template=p.IMPLEMENTATION,
           worker_prompt_template=p.IMPLEMENTATION_WORKER, iterable=True, parallel=True,
           kind="parallel"),

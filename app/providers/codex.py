@@ -6,8 +6,6 @@ import json
 from app.models import pipeline_stats
 from app.providers.base import ProviderResult
 
-_CODEX_TIMEOUT = 600  # seconds per subprocess call
-
 
 def _extract_codex_error(message: str) -> str:
     """Codex wraps API errors as a JSON string inside ``message``; unwrap it."""
@@ -81,21 +79,31 @@ class CodexProvider:
 
     name = "codex"
 
-    def __init__(self, model: str = "") -> None:
+    def __init__(
+        self,
+        model: str = "",
+        timeout_seconds: int = 600,
+        skip_permissions: bool = True,
+        extra_args: tuple[str, ...] = (),
+    ) -> None:
         self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.skip_permissions = skip_permissions
+        self.extra_args = tuple(extra_args)
+
+    def _build_cmd(self) -> list[str]:
+        cmd = ["codex", "exec", "-", "--json"]
+        if self.skip_permissions:
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        if self.model:
+            cmd += ["-m", self.model]
+        cmd += list(self.extra_args)
+        return cmd
 
     async def run(
         self, prompt: str, working_dir: str, on_stream=None
     ) -> ProviderResult:
-        cmd = [
-            "codex",
-            "exec",
-            "-",
-            "--json",
-            "--dangerously-bypass-approvals-and-sandbox",
-        ]
-        if self.model:
-            cmd += ["-m", self.model]
+        cmd = self._build_cmd()
 
         proc = None
         stderr_task: asyncio.Task | None = None
@@ -126,7 +134,7 @@ class CodexProvider:
             lines: list[str] = []
             buf = b""
             try:
-                async with asyncio.timeout(_CODEX_TIMEOUT):
+                async with asyncio.timeout(self.timeout_seconds):
                     while True:
                         raw_chunk = await proc.stdout.read(65536)
                         if not raw_chunk:
@@ -148,7 +156,7 @@ class CodexProvider:
                                     await _emit(on_stream, item.get("text", ""))
             except asyncio.TimeoutError:
                 return ProviderResult(
-                    False, "", error=f"Timeout after {_CODEX_TIMEOUT}s", cost_usd=None
+                    False, "", error=f"Timeout after {self.timeout_seconds}s", cost_usd=None
                 )
 
             await stderr_task

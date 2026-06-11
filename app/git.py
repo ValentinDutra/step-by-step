@@ -3,6 +3,7 @@
 import asyncio
 import json
 
+from app.config import Limits
 from app.stages import Stage
 
 
@@ -69,6 +70,7 @@ async def run_commit_pr_stage(
     working_dir: str,
     on_stream=None,
     on_log=None,
+    limits: Limits = Limits(),
 ) -> str:
     """Commit changes with conventional commits and open a GitHub PR."""
     stage.start()
@@ -89,8 +91,8 @@ async def run_commit_pr_stage(
 
     conv_prompt = stage.prompt_template.format(
         prompt=prompt,
-        prev_output=prev_output[:3000],
-        diff_stat=diff_stat[:1500] if diff_stat else "No changes detected yet",
+        prev_output=prev_output[: limits.commit_context_chars],
+        diff_stat=diff_stat[: limits.diff_stat_chars] if diff_stat else "No changes detected yet",
     )
 
     conv_result = await stage.provider.run(conv_prompt, working_dir, on_stream=on_stream)

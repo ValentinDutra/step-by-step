@@ -10,6 +10,31 @@ PLANNING = (
     "Be specific and actionable. Output the plan in markdown."
 )
 
+DECOMPOSITION = (
+    "You are a task decomposition agent. Given a plan, break it into independent subtasks "
+    "that can be worked on IN PARALLEL by different engineers.\n\n"
+    "ORIGINAL TASK: {prompt}\n\n"
+    "PLAN:\n{prev_output}\n\n"
+    "Output a JSON array of subtasks. Each subtask should have:\n"
+    '- "id": sequential integer starting at 1\n'
+    '- "description": what to implement (be specific and self-contained, include enough context)\n'
+    '- "files": list of files this subtask will create or modify\n\n'
+    "Rules:\n"
+    "- Each subtask must be independent enough to work on in parallel\n"
+    "- Include enough context in each description so a worker can act without seeing other subtasks\n"
+    "- Create as many subtasks as the complexity genuinely requires — no artificial limit\n"
+    "- If the task is simple and cannot be split, return a single subtask\n"
+    "- Output ONLY the JSON array, no markdown fences or other text\n"
+)
+
+GATE_EVALUATION = (
+    "You are a quality gate agent. Review the following stage output and decide "
+    "whether it contains genuine issues that require another implementation iteration.\n\n"
+    "Answer ONLY with 'yes' if there are real issues that need fixing, "
+    "or 'no' if the output is satisfactory and the pipeline can proceed.\n\n"
+    "STAGE OUTPUT:\n{prev_output}"
+)
+
 IMPLEMENTATION = (
     "You are a senior software engineer. Implement the following plan.\n\n"
     "ORIGINAL TASK: {prompt}\n\n"
