@@ -203,6 +203,7 @@ Type your task in the input area at the bottom and press `Ctrl+Enter` to start.
 | `Ctrl+Enter` | Submit prompt and run the pipeline |
 | `Ctrl+L` | Clear the activity log |
 | `Ctrl+E` | Export log to `pipeline_log_<timestamp>.txt` |
+| `Ctrl+X` | Cancel the running pipeline |
 | `Ctrl+C` | Quit |
 
 ### Re-running from a specific stage
