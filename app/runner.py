@@ -28,7 +28,7 @@ from app.config import (
     provider_for,
     preflight,
 )
-from app.models import Task, pipeline_stats
+from app.models import Task, cost_cap_exceeded, pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
 from app.pipeline_graph import gate_loopback_target, rerun_order, stage_prev
 from app.stages import StageStatus
@@ -162,6 +162,15 @@ class PipelineRunnerMixin:
 
         while index < len(stages):
             stage = stages[index]
+            if cost_cap_exceeded(pipeline_stats, self._limits.max_cost_usd):
+                self._write_log(
+                    f"[red]✗ Cost cap reached: ${pipeline_stats.total_cost_usd:.4f} ≥ "
+                    f"${self._limits.max_cost_usd:.2f} — stopping pipeline[/red]"
+                )
+                stats_bar.remove_class("working")
+                stats_bar.update("Cost cap reached")
+                return True
+            stage_cost_before = pipeline_stats.total_cost_usd
             pill = pills[index] if index < len(pills) else None
             prev_output = outputs[index - 1] if index > 0 else ""
             iteration_context = "" if stage.kind == "gate" else feedback
@@ -255,8 +264,10 @@ class PipelineRunnerMixin:
 
             outputs[index] = output
             self._stage_outputs[stage.name] = output
+            stage_cost_delta = pipeline_stats.total_cost_usd - stage_cost_before
+            cost_note = f" · ${stage_cost_delta:.4f}" if stage_cost_delta > 0 else ""
             self._write_log(
-                f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)}"
+                f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)}{cost_note}"
             )
             preview = output[:300].strip()
             if preview and stage.kind != "commit_pr":
@@ -355,6 +366,14 @@ class PipelineRunnerMixin:
 
         for index in range(from_idx, len(stages)):
             stage = stages[index]
+            if cost_cap_exceeded(pipeline_stats, self._limits.max_cost_usd):
+                self._write_log(
+                    f"[red]✗ Cost cap reached: ${pipeline_stats.total_cost_usd:.4f} ≥ "
+                    f"${self._limits.max_cost_usd:.2f} — stopping pipeline[/red]"
+                )
+                failed = True
+                break
+            stage_cost_before = pipeline_stats.total_cost_usd
             pill = pills[index] if index < len(pills) else None
             if pill is not None:
                 pill.update_status(StageStatus.RUNNING)
@@ -437,8 +456,10 @@ class PipelineRunnerMixin:
             if pill is not None:
                 pill.update_status(stage.status, stage.elapsed)
             if stage.status == StageStatus.COMPLETED:
+                stage_cost_delta = pipeline_stats.total_cost_usd - stage_cost_before
+                cost_note = f" · ${stage_cost_delta:.4f}" if stage_cost_delta > 0 else ""
                 self._write_log(
-                    f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)}"
+                    f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)}{cost_note}"
                 )
                 preview = output[:300].strip()
                 if preview and stage.kind != "commit_pr":

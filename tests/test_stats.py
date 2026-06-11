@@ -1,6 +1,6 @@
 import pytest
 
-from app.models import PipelineStats
+from app.models import PipelineStats, cost_cap_exceeded
 
 
 def test_add_call_accumulates_known_cost_and_counts_none():
@@ -29,3 +29,20 @@ def test_reset_clears_calls_without_cost():
     stats.reset()
     assert stats.calls_without_cost == 0
     assert stats.format_cost() == "$0.0000"
+
+
+def test_cost_cap_exceeded_never_trips_without_cap():
+    stats = PipelineStats()
+    stats.add_call(999.0)
+    assert cost_cap_exceeded(stats, None) is False
+
+
+def test_cost_cap_exceeded_trips_at_and_above_cap():
+    stats = PipelineStats()
+    assert cost_cap_exceeded(stats, 1.0) is False
+    stats.add_call(0.5)
+    assert cost_cap_exceeded(stats, 1.0) is False
+    stats.add_call(0.5)
+    assert cost_cap_exceeded(stats, 1.0) is True
+    stats.add_call(0.1)
+    assert cost_cap_exceeded(stats, 1.0) is True

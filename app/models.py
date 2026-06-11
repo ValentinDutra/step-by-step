@@ -82,4 +82,9 @@ class PipelineStats:
         return base
 
 
+def cost_cap_exceeded(stats: PipelineStats, max_cost_usd: float | None) -> bool:
+    """True when a configured cost cap exists and accumulated cost reached it."""
+    return max_cost_usd is not None and stats.total_cost_usd >= max_cost_usd
+
+
 pipeline_stats = PipelineStats()
