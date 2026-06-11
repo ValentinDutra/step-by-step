@@ -179,6 +179,7 @@ def main():
     parser.add_argument("repo", nargs="?", default=os.getcwd(), help="Path to the target repository (default: current directory)")
     parser.add_argument("-f", "--prompt-file", default="", metavar="FILE", help="Read prompt from FILE and start pipeline immediately")
     parser.add_argument("--config", default="", metavar="PATH", help="Path to a step-by-step.toml provider config (overrides project/user config)")
+    parser.add_argument("--check", action="store_true", help="Validate the config and print the resolved pipeline without running anything")
     args = parser.parse_args()
 
     repo = os.path.abspath(os.path.expanduser(args.repo))
@@ -199,6 +200,11 @@ def main():
         if not os.path.isfile(config_path):
             print(f"Error: config file '{config_path}' not found")
             raise SystemExit(1)
+
+    if args.check:
+        from app.check import run_check
+
+        raise SystemExit(run_check(repo, config_path))
 
     app = PipelineApp(working_dir=repo, prompt_file=prompt_file, config_path=config_path)
     app.run()

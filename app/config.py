@@ -140,8 +140,8 @@ def _user_config_path() -> Path:
     return Path(base) / "step-by-step" / "config.toml"
 
 
-def load_config(repo_dir: str, explicit_path: str | None = None) -> dict:
-    """Return the first existing config in precedence order, else the default."""
+def find_config_path(repo_dir: str, explicit_path: str | None = None) -> Path | None:
+    """Return the first existing config file in precedence order, or ``None``."""
     candidates: list[Path] = []
     if explicit_path:
         candidates.append(Path(explicit_path))
@@ -149,9 +149,17 @@ def load_config(repo_dir: str, explicit_path: str | None = None) -> dict:
     candidates.append(_user_config_path())
     for path in candidates:
         if path.is_file():
-            with open(path, "rb") as handle:
-                return tomllib.load(handle)
-    return {"defaults": dict(_DEFAULT_CONFIG["defaults"])}
+            return path
+    return None
+
+
+def load_config(repo_dir: str, explicit_path: str | None = None) -> dict:
+    """Return the first existing config in precedence order, else the default."""
+    path = find_config_path(repo_dir, explicit_path)
+    if path is None:
+        return {"defaults": dict(_DEFAULT_CONFIG["defaults"])}
+    with open(path, "rb") as handle:
+        return tomllib.load(handle)
 
 
 def resolve_providers(
