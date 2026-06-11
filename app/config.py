@@ -10,6 +10,7 @@ Precedence (first existing wins):
 import os
 import shutil
 import tomllib
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 from app.providers.base import LLMProvider
@@ -34,6 +35,62 @@ _INSTALL_HINTS = {
 }
 
 _DEFAULT_CONFIG = {"defaults": {"provider": "claude", "model": ""}}
+
+
+@dataclass(frozen=True)
+class Limits:
+    provider_timeout_seconds: int = 600
+    max_ram_pct: float = 75.0
+    max_cost_usd: float | None = None
+    default_max_iterations: int = 3
+    prev_output_chars: int = 8000
+    worker_prev_output_chars: int = 6000
+    evaluation_output_chars: int = 4000
+    commit_context_chars: int = 3000
+    diff_stat_chars: int = 1500
+    feedback_chars: int = 3000
+
+
+_FLOAT_LIMIT_KEYS = {"max_ram_pct", "max_cost_usd"}
+
+
+def _is_positive_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and value > 0
+    )
+
+
+def resolve_limits(config: dict) -> Limits:
+    """Build :class:`Limits` from the optional ``[limits]`` section.
+
+    Unknown keys and out-of-range values fail fast so a typo never silently
+    falls back to a default.
+    """
+    section = config.get("limits", {})
+    valid_keys = [field.name for field in fields(Limits)]
+    unknown = sorted(set(section) - set(valid_keys))
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in [limits]: {', '.join(unknown)}. "
+            f"Valid keys: {', '.join(valid_keys)}"
+        )
+
+    resolved: dict = {}
+    for key, value in section.items():
+        if key in _FLOAT_LIMIT_KEYS:
+            if not _is_positive_number(value) or (key == "max_ram_pct" and value > 100):
+                expected = "a number in (0, 100]" if key == "max_ram_pct" else "a positive number"
+                raise ValueError(f"[limits] {key} must be {expected}, got {value!r}")
+            resolved[key] = float(value)
+        else:
+            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                raise ValueError(
+                    f"[limits] {key} must be a positive integer, got {value!r}"
+                )
+            resolved[key] = value
+    return Limits(**resolved)
 
 
 def provider_for(name: str, model: str) -> LLMProvider:
@@ -106,6 +163,7 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
     default_model = defaults.get("model", "")
     provider_for(default_provider, default_model)  # validate the default eagerly
 
+    limits = resolve_limits(config)
     phases = config.get("phases", {})
     registry = {stage.name: stage for stage in STAGES}
     if "pipeline" in config:
@@ -150,7 +208,7 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
                 provider_name=provider.name,
                 model=model,
                 kind=kind,
-                max_iterations=entry.get("max_iterations", 3),
+                max_iterations=entry.get("max_iterations", limits.default_max_iterations),
             )
         )
 
