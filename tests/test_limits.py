@@ -2,7 +2,14 @@ import asyncio
 
 import pytest
 
-from app.config import Limits, provider_for, resolve_limits, resolve_pipeline
+from app.config import (
+    Confirm,
+    Limits,
+    provider_for,
+    resolve_confirm,
+    resolve_limits,
+    resolve_pipeline,
+)
 from app.pipeline import run_stage
 from app.providers.base import ProviderResult
 from app.stages import Stage
@@ -97,6 +104,30 @@ def test_configured_timeout_propagates_through_resolve_pipeline(tmp_path):
     config = {"limits": {"provider_timeout_seconds": 1200}}
     stages = resolve_pipeline(config, str(tmp_path))
     assert all(stage.provider.timeout_seconds == 1200 for stage in stages)
+
+
+def test_resolve_confirm_defaults():
+    assert resolve_confirm({}, ["Planning"]) == Confirm()
+
+
+def test_resolve_confirm_unknown_key_rejected():
+    with pytest.raises(ValueError, match="Unknown key\\(s\\) in \\[confirm\\]: pause"):
+        resolve_confirm({"confirm": {"pause": True}}, ["Planning"])
+
+
+def test_resolve_confirm_unknown_phase_rejected():
+    with pytest.raises(ValueError, match="not in the pipeline: Bogus"):
+        resolve_confirm({"confirm": {"phases": ["Bogus"]}}, ["Planning"])
+
+
+def test_resolve_confirm_valid_settings_accepted():
+    confirm = resolve_confirm(
+        {"confirm": {"phases": ["Planning"], "step": True, "review_tasks": True}},
+        ["Planning", "Commit & PR"],
+    )
+    assert confirm.phases == ("Planning",)
+    assert confirm.step is True
+    assert confirm.review_tasks is True
 
 
 def test_explicit_phase_max_iterations_wins_over_default(tmp_path):

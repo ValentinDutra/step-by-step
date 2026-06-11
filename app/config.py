@@ -52,6 +52,45 @@ class Limits:
 
 
 @dataclass(frozen=True)
+class Confirm:
+    phases: tuple[str, ...] = ()
+    review_tasks: bool = False
+    step: bool = False
+
+
+def resolve_confirm(config: dict, stage_names: list[str]) -> Confirm:
+    """Build :class:`Confirm` from the optional ``[confirm]`` section.
+
+    ``phases`` entries must name phases present in the resolved pipeline.
+    """
+    section = config.get("confirm", {})
+    valid_keys = [field.name for field in fields(Confirm)]
+    unknown = sorted(set(section) - set(valid_keys))
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in [confirm]: {', '.join(unknown)}. "
+            f"Valid keys: {', '.join(valid_keys)}"
+        )
+    phases = section.get("phases", [])
+    if not isinstance(phases, list) or not all(isinstance(name, str) for name in phases):
+        raise ValueError(f"[confirm] phases must be a list of strings, got {phases!r}")
+    unknown_phases = sorted(set(phases) - set(stage_names))
+    if unknown_phases:
+        raise ValueError(
+            f"[confirm] phases name(s) not in the pipeline: {', '.join(unknown_phases)}. "
+            f"Valid phases: {', '.join(stage_names)}"
+        )
+    for key in ("review_tasks", "step"):
+        if not isinstance(section.get(key, False), bool):
+            raise ValueError(f"[confirm] {key} must be a boolean, got {section[key]!r}")
+    return Confirm(
+        phases=tuple(phases),
+        review_tasks=section.get("review_tasks", False),
+        step=section.get("step", False),
+    )
+
+
+@dataclass(frozen=True)
 class Artifacts:
     enabled: bool = False
     dir: str = ".step-by-step/runs"

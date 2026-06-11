@@ -22,10 +22,11 @@ from app.agents import decompose_task
 from app.artifacts import RunArtifacts
 from app.confirm import ConfirmScreen
 from app.evaluation import evaluate_should_iterate
-from app.git import create_branch, run_commit_pr_stage
+from app.git import _git, create_branch, run_commit_pr_stage
 from app.config import (
     load_config,
     resolve_artifacts,
+    resolve_confirm,
     resolve_limits,
     resolve_pipeline,
     provider_for,
@@ -49,6 +50,22 @@ class PipelineRunnerMixin:
         """
         return bool(await self.push_screen_wait(ConfirmScreen(title, body)))
 
+    async def _confirm_before(self, stage) -> bool:
+        """Pre-phase confirmation gate; True = continue, False = user stopped."""
+        body = (
+            f"Stage: {stage.name}\n"
+            f"Provider: {stage.provider_name}\n"
+            f"Model: {stage.model or '(default)'}"
+        )
+        if stage.kind == "commit_pr":
+            _, status_out, _ = await _git(self.working_dir, "status", "--short")
+            _, diff_stat, _ = await _git(self.working_dir, "diff", "HEAD", "--stat")
+            body += (
+                f"\n\ngit status --short:\n{status_out or '(clean)'}"
+                f"\n\ngit diff HEAD --stat:\n{diff_stat or '(no diff)'}"
+            )
+        return await self._ask_confirm(f"Run {stage.name}?", body)
+
     def _resolve_or_report(self, stats_bar, prompt_input):
         """Resolve the configured pipeline, or report an invalid config and abort.
 
@@ -62,6 +79,7 @@ class PipelineRunnerMixin:
             self._limits = resolve_limits(config)
             self._artifacts_config = resolve_artifacts(config)
             self._artifacts = None
+            self._confirm = resolve_confirm(config, [stage.name for stage in stages])
             defaults = config.get("defaults", {})
             self._default_provider = provider_for(
                 defaults.get("provider", "claude"),
@@ -193,6 +211,12 @@ class PipelineRunnerMixin:
                 stats_bar.remove_class("working")
                 stats_bar.update("Cost cap reached")
                 return True
+            if stage.name in self._confirm.phases:
+                if not await self._confirm_before(stage):
+                    self._write_log(f"[yellow]Stopped by user before {stage.name}[/yellow]")
+                    stats_bar.remove_class("working")
+                    stats_bar.update("Stopped by user")
+                    return True
             stage_cost_before = pipeline_stats.total_cost_usd
             pill = pills[index] if index < len(pills) else None
             prev_output = outputs[index - 1] if index > 0 else ""
@@ -408,6 +432,12 @@ class PipelineRunnerMixin:
                 )
                 failed = True
                 break
+            if stage.name in self._confirm.phases:
+                if not await self._confirm_before(stage):
+                    self._write_log(f"[yellow]Stopped by user before {stage.name}[/yellow]")
+                    stats_bar.update("Stopped by user")
+                    failed = True
+                    break
             stage_cost_before = pipeline_stats.total_cost_usd
             pill = pills[index] if index < len(pills) else None
             if pill is not None:
