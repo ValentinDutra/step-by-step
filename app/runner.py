@@ -22,15 +22,28 @@ from app.agents import decompose_task
 from app.evaluation import evaluate_should_iterate
 from app.providers.claude import ClaudeProvider
 from app.git import create_branch, run_commit_pr_stage
+from app.config import load_config, resolve_providers, provider_for, preflight
 from app.models import Task, pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
 from app.runner_steps import PipelineStepsMixin
-from app.stages import StageStatus, create_stages
+from app.stages import STAGES, StageStatus, create_stages
 from app.widgets import RERUN_ORDER, STAGE_PREV, StagePill
 
 
 class PipelineRunnerMixin(PipelineStepsMixin):
     """Mixin providing run_pipeline and rerun_from_stage workers."""
+
+    def _resolve_providers(self):
+        """Load config and resolve (provider, model) per phase, plus the
+        ``[defaults]`` provider used by the quality-gate."""
+        config = load_config(self.working_dir, getattr(self, "config_path", ""))
+        phase_names = [s.name for s in STAGES]
+        resolved = resolve_providers(config, phase_names)
+        defaults = config.get("defaults", {})
+        default_provider = provider_for(
+            defaults.get("provider", "claude"), defaults.get("model", "")
+        )
+        return resolved, default_provider
 
     @work(exclusive=True)
     async def run_pipeline(self, prompt: str):
@@ -44,7 +57,18 @@ class PipelineRunnerMixin(PipelineStepsMixin):
 
         pipeline_stats.reset()
 
-        stages = create_stages()
+        try:
+            resolved, self._default_provider = self._resolve_providers()
+        except ValueError as exc:
+            self._write_log(f"[red]✗ Config error:[/red] {exc}")
+            stats_bar.update("Config error")
+            stats_bar.remove_class("working")
+            stats_bar.add_class("error")
+            prompt_input.disabled = False
+            self.running = False
+            return
+
+        stages = create_stages(resolved)
         pills = list(self.query(StagePill))
         stage_map = {s.name: (i, s) for i, s in enumerate(stages)}
 
@@ -365,7 +389,8 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             else []
         )
 
-        fresh_stages = {s.name: s for s in create_stages()}
+        resolved, self._default_provider = self._resolve_providers()
+        fresh_stages = {s.name: s for s in create_stages(resolved)}
         failed = False
 
         self._write_log(
