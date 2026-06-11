@@ -1,0 +1,50 @@
+import asyncio
+
+from app.agents import decompose_task
+from app.providers.base import ProviderResult
+
+
+class _StubProvider:
+    name = "stub"
+
+    def __init__(self, output="[]", success=True):
+        self.output = output
+        self.success = success
+        self.prompts = []
+
+    async def run(self, prompt, working_dir, on_stream=None):
+        self.prompts.append(prompt)
+        return ProviderResult(self.success, self.output, cost_usd=None)
+
+
+def test_custom_decompose_template_used_with_substitutions(tmp_path):
+    provider = _StubProvider(output='[{"id": 1, "description": "d"}]')
+    tasks = asyncio.run(
+        decompose_task(
+            "my task",
+            "the plan",
+            str(tmp_path),
+            provider,
+            template="SPLIT {prompt} USING {prev_output}",
+        )
+    )
+    assert provider.prompts == ["SPLIT my task USING the plan"]
+    assert len(tasks) == 1
+    assert tasks[0].description == "d"
+
+
+def test_default_decompose_template_used_when_empty(tmp_path):
+    provider = _StubProvider(output='[{"id": 1, "description": "d"}]')
+    asyncio.run(decompose_task("my task", "the plan", str(tmp_path), provider))
+    rendered = provider.prompts[0]
+    assert "ORIGINAL TASK: my task" in rendered
+    assert "PLAN:\nthe plan" in rendered
+    assert "JSON array" in rendered
+
+
+def test_non_json_output_falls_back_to_single_task(tmp_path):
+    provider = _StubProvider(output="not json at all")
+    tasks = asyncio.run(decompose_task("my task", "plan", str(tmp_path), provider))
+    assert len(tasks) == 1
+    assert tasks[0].id == 1
+    assert tasks[0].description == "my task"

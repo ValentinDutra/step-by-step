@@ -191,7 +191,8 @@ class PipelineRunnerMixin:
                     plan_arg = f"{prev_output}\n\n{feedback}" if prev_output else feedback
                 stage.start()
                 decomposed_tasks = await decompose_task(
-                    prompt, plan_arg, self.working_dir, stage.provider
+                    prompt, plan_arg, self.working_dir, stage.provider,
+                    template=stage.prompt_template,
                 )
                 stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
                 self._last_decomposed_tasks = decomposed_tasks
@@ -390,7 +391,8 @@ class PipelineRunnerMixin:
                 )
                 stage.start()
                 decomposed_tasks = await decompose_task(
-                    prompt, prev_output, self.working_dir, stage.provider
+                    prompt, prev_output, self.working_dir, stage.provider,
+                    template=stage.prompt_template,
                 )
                 stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
                 self._last_decomposed_tasks = decomposed_tasks
