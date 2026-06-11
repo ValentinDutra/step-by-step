@@ -23,6 +23,7 @@ from app.evaluation import evaluate_should_iterate
 from app.git import create_branch, run_commit_pr_stage
 from app.config import (
     load_config,
+    resolve_limits,
     resolve_pipeline,
     provider_for,
     preflight,
@@ -47,9 +48,12 @@ class PipelineRunnerMixin:
         try:
             config = load_config(self.working_dir, getattr(self, "config_path", ""))
             stages = resolve_pipeline(config, self.working_dir)
+            self._limits = resolve_limits(config)
             defaults = config.get("defaults", {})
             self._default_provider = provider_for(
-                defaults.get("provider", "claude"), defaults.get("model", "")
+                defaults.get("provider", "claude"),
+                defaults.get("model", ""),
+                timeout_seconds=self._limits.provider_timeout_seconds,
             )
             return stages
         except ValueError as exc:

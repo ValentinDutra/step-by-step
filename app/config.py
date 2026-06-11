@@ -93,13 +93,13 @@ def resolve_limits(config: dict) -> Limits:
     return Limits(**resolved)
 
 
-def provider_for(name: str, model: str) -> LLMProvider:
+def provider_for(name: str, model: str, timeout_seconds: int = 600) -> LLMProvider:
     """Build the provider for ``name``, or raise ``ValueError`` if unknown."""
     cls = _PROVIDERS.get(name)
     if cls is None:
         valid = ", ".join(sorted(_PROVIDERS))
         raise ValueError(f"Unknown provider '{name}'. Valid providers: {valid}")
-    return cls(model)
+    return cls(model, timeout_seconds=timeout_seconds)
 
 
 def _user_config_path() -> Path:
@@ -129,6 +129,7 @@ def resolve_providers(
     default_provider = defaults.get("provider", "claude")
     default_model = defaults.get("model", "")
     provider_for(default_provider, default_model)  # validate the default eagerly
+    limits = resolve_limits(config)
 
     phases = config.get("phases", {})
     valid = set(phase_names)
@@ -144,7 +145,10 @@ def resolve_providers(
         entry = phases.get(phase_name, {})
         name = entry.get("provider", default_provider)
         model = entry.get("model", default_model)
-        resolved[phase_name] = (provider_for(name, model), model)
+        resolved[phase_name] = (
+            provider_for(name, model, timeout_seconds=limits.provider_timeout_seconds),
+            model,
+        )
     return resolved
 
 
@@ -176,7 +180,9 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
         entry = phases.get(name, {})
         provider_name = entry.get("provider", default_provider)
         model = entry.get("model", default_model)
-        provider = provider_for(provider_name, model)
+        provider = provider_for(
+            provider_name, model, timeout_seconds=limits.provider_timeout_seconds
+        )
 
         builtin = registry.get(name)
         if builtin is not None:

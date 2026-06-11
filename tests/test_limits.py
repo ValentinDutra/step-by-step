@@ -1,6 +1,6 @@
 import pytest
 
-from app.config import Limits, resolve_limits, resolve_pipeline
+from app.config import Limits, provider_for, resolve_limits, resolve_pipeline
 
 
 def test_defaults_when_section_absent():
@@ -58,6 +58,17 @@ def test_default_max_iterations_reaches_stage(tmp_path):
     stages = resolve_pipeline(config, str(tmp_path))
     gate = next(stage for stage in stages if stage.kind == "gate")
     assert gate.max_iterations == 5
+
+
+def test_provider_for_timeout_reaches_provider():
+    provider = provider_for("claude", "", timeout_seconds=42)
+    assert provider.timeout_seconds == 42
+
+
+def test_configured_timeout_propagates_through_resolve_pipeline(tmp_path):
+    config = {"limits": {"provider_timeout_seconds": 1200}}
+    stages = resolve_pipeline(config, str(tmp_path))
+    assert all(stage.provider.timeout_seconds == 1200 for stage in stages)
 
 
 def test_explicit_phase_max_iterations_wins_over_default(tmp_path):

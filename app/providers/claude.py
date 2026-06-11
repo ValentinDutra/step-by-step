@@ -6,8 +6,6 @@ import json
 from app.models import pipeline_stats
 from app.providers.base import ProviderResult
 
-_CLAUDE_TIMEOUT = 600  # seconds per subprocess call
-
 
 def parse_claude_stream_json(lines: list[str]) -> ProviderResult:
     """Parse Claude Code ``stream-json`` lines into a :class:`ProviderResult`.
@@ -52,8 +50,9 @@ class ClaudeProvider:
 
     name = "claude"
 
-    def __init__(self, model: str = "") -> None:
+    def __init__(self, model: str = "", timeout_seconds: int = 600) -> None:
         self.model = model
+        self.timeout_seconds = timeout_seconds
 
     async def run(
         self, prompt: str, working_dir: str, on_stream=None
@@ -98,7 +97,7 @@ class ClaudeProvider:
             lines: list[str] = []
             buf = b""
             try:
-                async with asyncio.timeout(_CLAUDE_TIMEOUT):
+                async with asyncio.timeout(self.timeout_seconds):
                     while True:
                         raw_chunk = await proc.stdout.read(65536)
                         if not raw_chunk:
@@ -120,7 +119,7 @@ class ClaudeProvider:
                                         await _emit(on_stream, block["text"])
             except asyncio.TimeoutError:
                 return ProviderResult(
-                    False, "", error=f"Timeout after {_CLAUDE_TIMEOUT}s", cost_usd=None
+                    False, "", error=f"Timeout after {self.timeout_seconds}s", cost_usd=None
                 )
 
             await stderr_task
