@@ -68,6 +68,17 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             self.running = False
             return
 
+        missing = preflight(resolved)
+        if missing:
+            for message in missing:
+                self._write_log(f"[red]✗ {message}[/red]")
+            stats_bar.update("Missing provider CLI")
+            stats_bar.remove_class("working")
+            stats_bar.add_class("error")
+            prompt_input.disabled = False
+            self.running = False
+            return
+
         stages = create_stages(resolved)
         pills = list(self.query(StagePill))
         stage_map = {s.name: (i, s) for i, s in enumerate(stages)}

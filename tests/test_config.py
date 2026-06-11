@@ -61,3 +61,20 @@ def test_unknown_provider_fails_fast():
 def test_unknown_phase_name_fails_fast():
     with pytest.raises(ValueError, match="Unknown phase"):
         resolve_providers({"phases": {"Bogus": {"provider": "claude"}}}, PHASES)
+
+
+def test_preflight_reports_missing(monkeypatch):
+    from app import config
+    from app.providers.codex import CodexProvider
+
+    monkeypatch.setattr(config.shutil, "which", lambda name: None)
+    missing = config.preflight({"Code Quality": (CodexProvider(), "")})
+    assert any("codex" in message for message in missing)
+
+
+def test_preflight_passes_when_binary_present(monkeypatch):
+    from app import config
+    from app.providers.claude import ClaudeProvider
+
+    monkeypatch.setattr(config.shutil, "which", lambda name: f"/usr/bin/{name}")
+    assert config.preflight({"Planning": (ClaudeProvider(), "")}) == []
