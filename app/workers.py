@@ -51,34 +51,34 @@ async def run_worker(
     task: Task,
     worker_prompt: str,
     working_dir: str,
+    provider,
     on_start=None,
     on_complete=None,
     on_stream=None,
 ) -> WorkerResult:
-    """Run a single worker agent on a subtask."""
-    from app.claude import call_claude
-
+    """Run a single worker agent on a subtask through the given provider."""
     start = time.time()
     task.status = "running"
     if on_start:
         on_start(task)
 
-    success, output, _ = await call_claude(worker_prompt, working_dir, on_stream=on_stream)
+    outcome = await provider.run(worker_prompt, working_dir, on_stream=on_stream)
     elapsed = time.time() - start
 
-    if success:
+    if outcome.success:
         task.status = "completed"
-        task.output = output
+        task.output = outcome.output
         task.elapsed = elapsed
         result = WorkerResult(
-            task_id=task.id, success=True, output=output, elapsed=elapsed
+            task_id=task.id, success=True, output=outcome.output, elapsed=elapsed
         )
     else:
+        error = outcome.error or outcome.output
         task.status = "failed"
-        task.error = output
+        task.error = error
         task.elapsed = elapsed
         result = WorkerResult(
-            task_id=task.id, success=False, output="", elapsed=elapsed, error=output
+            task_id=task.id, success=False, output="", elapsed=elapsed, error=error
         )
 
     if on_complete:
@@ -90,6 +90,7 @@ async def run_workers_parallel(
     tasks: list[Task],
     worker_prompts: list[str],
     working_dir: str,
+    provider,
     max_ram_pct: float = 75.0,
     on_start=None,
     on_complete=None,
@@ -110,6 +111,7 @@ async def run_workers_parallel(
                 task,
                 prompt,
                 working_dir,
+                provider,
                 on_start=on_start,
                 on_complete=on_complete,
                 on_stream=worker_stream,
