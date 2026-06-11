@@ -118,7 +118,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             )
 
             decomp_stage.start()
-            decomposed_tasks = await decompose_task(prompt, plan_output, self.working_dir)
+            decomposed_tasks = await decompose_task(
+                prompt, plan_output, self.working_dir, decomp_stage.provider
+            )
             decomp_stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
             self._last_decomposed_tasks = decomposed_tasks
 
@@ -216,7 +218,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             )
 
             d_stage.start()
-            decomposed_tasks = await decompose_task(prompt, decomp_context, self.working_dir)
+            decomposed_tasks = await decompose_task(
+                prompt, decomp_context, self.working_dir, d_stage.provider
+            )
             d_stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
             self._last_decomposed_tasks = decomposed_tasks
 
@@ -381,7 +385,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
                     f"[dim](manager splitting tasks)[/dim]"
                 )
                 stage.start()
-                decomposed_tasks = await decompose_task(prompt, prev_output, self.working_dir)
+                decomposed_tasks = await decompose_task(
+                    prompt, prev_output, self.working_dir, stage.provider
+                )
                 stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
                 self._last_decomposed_tasks = decomposed_tasks
                 pill.update_status(StageStatus.COMPLETED, stage.elapsed)
