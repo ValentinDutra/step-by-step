@@ -88,7 +88,7 @@ class PipelineApp(PipelineRunnerMixin, App):
         stats_bar = self.query_one("#stats-bar", Label)
         stats = pipeline_stats
         stats_bar.update(
-            f"Calls: {stats.total_calls}  |  Cost: ${stats.total_cost_usd:.4f}  |  Time: {stats.format_elapsed()}"
+            f"Calls: {stats.total_calls}  |  Cost: {stats.format_cost()}  |  Time: {stats.format_elapsed()}"
         )
 
     def _refresh_monitor(self) -> None:

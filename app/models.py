@@ -34,18 +34,23 @@ class WorkerResult:
 class PipelineStats:
     total_cost_usd: float = 0.0
     total_calls: int = 0
+    calls_without_cost: int = 0
     total_stage_time: float = 0.0
     start_time: float = 0.0
 
     def reset(self):
         self.total_cost_usd = 0.0
         self.total_calls = 0
+        self.calls_without_cost = 0
         self.total_stage_time = 0.0
         self.start_time = time.time()
 
-    def add_call(self, cost_usd: float):
-        self.total_cost_usd += cost_usd
+    def add_call(self, cost_usd: float | None):
         self.total_calls += 1
+        if cost_usd is None:
+            self.calls_without_cost += 1
+        else:
+            self.total_cost_usd += cost_usd
 
     def add_stage_time(self, elapsed: float):
         self.total_stage_time += elapsed
@@ -69,6 +74,12 @@ class PipelineStats:
 
     def format_stage_time(self) -> str:
         return self._fmt(self.total_stage_time)
+
+    def format_cost(self) -> str:
+        base = f"${self.total_cost_usd:.4f}"
+        if self.calls_without_cost:
+            return f"{base} (+{self.calls_without_cost} n/a)"
+        return base
 
 
 pipeline_stats = PipelineStats()

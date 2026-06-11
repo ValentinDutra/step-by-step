@@ -310,7 +310,7 @@ class PipelineRunnerMixin(PipelineStepsMixin):
         # ── Final status ─────────────────────────────────────────────────
         stats = pipeline_stats
         final_stats = (
-            f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} "
+            f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
             f"| Time: {stats.format_stage_time()}"
         )
 
@@ -481,7 +481,7 @@ class PipelineRunnerMixin(PipelineStepsMixin):
 
         stats = pipeline_stats
         final_stats = (
-            f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} "
+            f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
             f"| Time: {stats.format_stage_time()}"
         )
 

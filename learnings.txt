@@ -6,3 +6,5 @@
 - codex 0.139.0 authed via ~/.codex/auth.json. Prompt via stdin uses `codex exec - --json`.
 - Bash calls print a harmless zoxide config warning; ignore it.
 - Dataclass/Protocol style lives in app/models.py; providers in app/providers/.
+- pytest ALREADY set up in Task 2: dev group `pytest>=9.0.3` + `[tool.pytest.ini_options] pythonpath=["."]`. Task 3 should skip "add pytest", just verify.
+- Float cost asserts: use `pytest.approx` (0.30+0.12 != 0.42 exactly); but `:.4f` formatting rounds fine for format_cost tests.
