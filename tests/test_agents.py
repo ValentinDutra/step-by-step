@@ -1,6 +1,7 @@
 import asyncio
 
 from app.agents import decompose_task
+from app.evaluation import evaluate_should_iterate
 from app.providers.base import ProviderResult
 
 
@@ -40,6 +41,17 @@ def test_default_decompose_template_used_when_empty(tmp_path):
     assert "ORIGINAL TASK: my task" in rendered
     assert "PLAN:\nthe plan" in rendered
     assert "JSON array" in rendered
+
+
+def test_custom_eval_template_sent_with_stage_output(tmp_path):
+    provider = _StubProvider(output="yes")
+    should_iterate = asyncio.run(
+        evaluate_should_iterate(
+            "the output", str(tmp_path), provider, template="JUDGE: {prev_output}"
+        )
+    )
+    assert provider.prompts == ["JUDGE: the output"]
+    assert should_iterate is True
 
 
 def test_non_json_output_falls_back_to_single_task(tmp_path):

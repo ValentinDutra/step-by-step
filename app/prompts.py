@@ -27,6 +27,14 @@ DECOMPOSITION = (
     "- Output ONLY the JSON array, no markdown fences or other text\n"
 )
 
+GATE_EVALUATION = (
+    "You are a quality gate agent. Review the following stage output and decide "
+    "whether it contains genuine issues that require another implementation iteration.\n\n"
+    "Answer ONLY with 'yes' if there are real issues that need fixing, "
+    "or 'no' if the output is satisfactory and the pipeline can proceed.\n\n"
+    "STAGE OUTPUT:\n{prev_output}"
+)
+
 IMPLEMENTATION = (
     "You are a senior software engineer. Implement the following plan.\n\n"
     "ORIGINAL TASK: {prompt}\n\n"

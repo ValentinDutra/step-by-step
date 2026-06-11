@@ -279,6 +279,7 @@ class PipelineRunnerMixin:
                 should_loop = await evaluate_should_iterate(
                     output, self.working_dir, self._default_provider,
                     limits=self._limits,
+                    template=stage.eval_prompt_template,
                 )
                 target = gate_loopback_target(stages, index)
                 count = gate_iterations.get(index, 0)
