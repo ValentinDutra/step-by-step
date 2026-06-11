@@ -97,9 +97,38 @@ provider = "gemini"
 model = "gemini-3.5-flash"
 ```
 
-Phase names match the pipeline stages: `Planning`, `Decomposition`, `Implementation`, `Tests & Validation`, `Code Quality`, `Documentation`, `Commit & PR`. Any phase you do not list falls back to `[defaults]`. Models are passed through to the CLI as-is. An unknown provider or phase name aborts before the run with a clear message, and a missing provider CLI is reported before stage 1.
+Phase names match the pipeline stages: `Planning`, `Decomposition`, `Implementation`, `Tests & Validation`, `Code Quality`, `Documentation`, `Commit & PR`. Any phase you do not list falls back to `[defaults]`. Models are passed through to the CLI as-is. An unknown provider aborts before the run with a clear message, and a missing provider CLI is reported before stage 1.
 
 Each provider handles its own authentication: `claude` (Claude Code login), `codex` (`codex login` or `OPENAI_API_KEY`), `gemini` (`gemini` login or `GEMINI_API_KEY`).
+
+### Customizing the pipeline
+
+By default the seven phases run in their listed order. Set a `pipeline` array to reorder phases, drop built-ins (e.g. omit `"Tests & Validation"`), or add your own prompt-only phases. With no `pipeline` key, the default seven run unchanged.
+
+```toml
+pipeline = ["Research", "Planning", "Decomposition", "Implementation", "Tests & Validation", "Commit & PR"]
+
+[phases."Research"]          # a custom phase
+kind = "simple"
+skill = "research"           # -> .step-by-step/skills/research/SKILL.md
+
+[phases."Code Quality"]
+max_iterations = 3           # cap the quality gate's re-run loop (default 3)
+```
+
+Each phase has a `kind`:
+
+| `kind` | behavior | built-ins |
+|---|---|---|
+| `simple` | one prompt -> one output | Planning, Documentation |
+| `decompose` | splits the plan into parallel subtasks | Decomposition |
+| `parallel` | fans out one worker per subtask | Implementation, Tests & Validation |
+| `gate` | reviews, then loops back to re-run (capped by `max_iterations`, default 3) | Code Quality |
+| `commit_pr` | creates the branch and the PR | Commit & PR |
+
+Custom phases must be `kind = "simple"` — the other kinds are reserved for the built-ins. A `simple` phase declares its prompt with either `skill = "name"` (a folder containing `SKILL.md`, resolved from `<repo>/.step-by-step/skills/` then `~/.config/step-by-step/skills/`) or an inline `prompt = "..."` — exactly one. A built-in phase may override its prompt the same way.
+
+The pipeline is validated before the run: an empty pipeline, duplicate names, a `parallel` phase with no preceding `decompose`, more than one `commit_pr` or `gate`, a custom phase that isn't `simple`, or one missing both `skill` and `prompt` all abort with a clear message. A `[phases.X]` table for a phase that isn't in the pipeline is ignored.
 
 ### Safety
 
