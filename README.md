@@ -130,6 +130,18 @@ Custom phases must be `kind = "simple"` — the other kinds are reserved for the
 
 The pipeline is validated before the run: an empty pipeline, duplicate names, a `parallel` phase with no preceding `decompose`, more than one `commit_pr` or `gate`, a custom phase that isn't `simple`, or one missing both `skill` and `prompt` all abort with a clear message. A `[phases.X]` table for a phase that isn't in the pipeline is ignored.
 
+### Run artifacts
+
+Set `[artifacts] enabled = true` to persist every run to disk for later inspection — the full output of each stage (not just the 300-char log preview), the original prompt, and the run stats:
+
+```toml
+[artifacts]
+enabled = true               # default: false
+dir = ".step-by-step/runs"   # relative to the target repo (default)
+```
+
+Each run writes `<repo>/.step-by-step/runs/<timestamp>/` containing `prompt.txt`, one `NN-<stage>.md` per stage (provider, model, status, elapsed, full output or error), and `run.json` (calls, cost, stage time, failed). Add `.step-by-step/runs/` to the target repo's `.gitignore`.
+
 ### Safety
 
 By default the pipeline runs every provider fully autonomous — no sandbox, no approval prompts (`--dangerously-skip-permissions` for Claude, `--dangerously-bypass-approvals-and-sandbox` for Codex, `--yolo` for Gemini). With a multi-provider config that is up to three agents with full read/write/execute access to the target repository. Run it on a throwaway branch or an isolated clone.

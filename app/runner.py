@@ -19,10 +19,12 @@ from textual import work
 from textual.widgets import Label, RichLog, TextArea
 
 from app.agents import decompose_task
+from app.artifacts import RunArtifacts
 from app.evaluation import evaluate_should_iterate
 from app.git import create_branch, run_commit_pr_stage
 from app.config import (
     load_config,
+    resolve_artifacts,
     resolve_limits,
     resolve_pipeline,
     provider_for,
@@ -49,6 +51,8 @@ class PipelineRunnerMixin:
             config = load_config(self.working_dir, getattr(self, "config_path", ""))
             stages = resolve_pipeline(config, self.working_dir)
             self._limits = resolve_limits(config)
+            self._artifacts_config = resolve_artifacts(config)
+            self._artifacts = None
             defaults = config.get("defaults", {})
             self._default_provider = provider_for(
                 defaults.get("provider", "claude"),
@@ -109,6 +113,12 @@ class PipelineRunnerMixin:
         self._set_stream_header("Pipeline started…")
         self._write_log(f"[bold]Pipeline started:[/bold] {prompt}\n")
 
+        if self._artifacts_config.enabled:
+            self._artifacts = RunArtifacts.start(
+                self.working_dir, self._artifacts_config.dir, prompt
+            )
+            self._write_log(f"[dim]Artifacts → {self._artifacts.run_dir}[/dim]")
+
         # ── Branch creation (only when a commit_pr phase is present) ──────
         commit_stage = next((s for s in stages if s.kind == "commit_pr"), None)
         if commit_stage is not None:
@@ -127,6 +137,8 @@ class PipelineRunnerMixin:
         failed = await self._run_dispatch_loop(stages, pills, prompt, stats_bar)
 
         # ── Final status ─────────────────────────────────────────────────
+        if self._artifacts is not None:
+            self._artifacts.finish(pipeline_stats, failed)
         stats = pipeline_stats
         final_stats = (
             f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
@@ -205,6 +217,8 @@ class PipelineRunnerMixin:
                 self._stage_outputs[stage.name] = prev_output
                 if pill is not None:
                     pill.update_status(StageStatus.COMPLETED, stage.elapsed)
+                if self._artifacts is not None:
+                    self._artifacts.record_stage(index, stage)
                 self._write_log(
                     f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)} "
                     f"→ [bold]{len(decomposed_tasks)} subtask(s)[/bold]"
@@ -258,6 +272,8 @@ class PipelineRunnerMixin:
 
             if pill is not None:
                 pill.update_status(stage.status, stage.elapsed)
+            if self._artifacts is not None:
+                self._artifacts.record_stage(index, stage)
 
             if stage.status != StageStatus.COMPLETED:
                 self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
@@ -353,6 +369,12 @@ class PipelineRunnerMixin:
         prev_output = self._stage_outputs.get(prev_name, "") if prev_name else ""
         prompt = self._last_prompt
 
+        if self._artifacts_config.enabled:
+            self._artifacts = RunArtifacts.start(
+                self.working_dir, self._artifacts_config.dir, prompt
+            )
+            self._write_log(f"[dim]Artifacts → {self._artifacts.run_dir}[/dim]")
+
         first_decompose = next(
             (i for i, s in enumerate(stages) if s.kind == "decompose"), None
         )
@@ -401,6 +423,8 @@ class PipelineRunnerMixin:
                 self._last_decomposed_tasks = decomposed_tasks
                 if pill is not None:
                     pill.update_status(StageStatus.COMPLETED, stage.elapsed)
+                if self._artifacts is not None:
+                    self._artifacts.record_stage(index, stage)
                 self._write_log(
                     f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)} "
                     f"→ [bold]{len(decomposed_tasks)} subtask(s)[/bold]"
@@ -460,6 +484,8 @@ class PipelineRunnerMixin:
 
             if pill is not None:
                 pill.update_status(stage.status, stage.elapsed)
+            if self._artifacts is not None:
+                self._artifacts.record_stage(index, stage)
             if stage.status == StageStatus.COMPLETED:
                 stage_cost_delta = pipeline_stats.total_cost_usd - stage_cost_before
                 cost_note = f" · ${stage_cost_delta:.4f}" if stage_cost_delta > 0 else ""
@@ -476,6 +502,8 @@ class PipelineRunnerMixin:
                 failed = True
                 break
 
+        if self._artifacts is not None:
+            self._artifacts.finish(pipeline_stats, failed)
         stats = pipeline_stats
         final_stats = (
             f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
