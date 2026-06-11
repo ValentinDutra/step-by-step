@@ -182,8 +182,11 @@ class PipelineRunnerMixin:
                 )
                 stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
                 self._last_decomposed_tasks = decomposed_tasks
-                outputs[index] = stage.output
-                self._stage_outputs[stage.name] = stage.output
+                # A decompose produces tasks (a side channel), not prose. Forward
+                # the incoming plan so the next stage's prev_output stays the plan,
+                # not the "Decomposed into N subtasks" status line.
+                outputs[index] = prev_output
+                self._stage_outputs[stage.name] = prev_output
                 if pill is not None:
                     pill.update_status(StageStatus.COMPLETED, stage.elapsed)
                 self._write_log(
@@ -375,8 +378,9 @@ class PipelineRunnerMixin:
                     self._write_log(
                         f"  [dim]#{task.id}: {task.description[:80]}  ({files})[/dim]"
                     )
-                self._stage_outputs[stage.name] = stage.output
-                prev_output = stage.output
+                # Forward the plan unchanged; the decompose's product is the task
+                # list, not the "Decomposed into N subtasks" status line.
+                self._stage_outputs[stage.name] = prev_output
                 continue
 
             if stage.kind == "parallel":
