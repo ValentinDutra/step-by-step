@@ -20,7 +20,7 @@ from textual.widgets import Label, RichLog, TextArea
 
 from app.agents import decompose_task
 from app.artifacts import RunArtifacts
-from app.confirm import ConfirmScreen
+from app.confirm import ConfirmScreen, TaskReviewScreen
 from app.evaluation import evaluate_should_iterate
 from app.git import _git, create_branch, run_commit_pr_stage
 from app.config import (
@@ -32,7 +32,7 @@ from app.config import (
     provider_for,
     preflight,
 )
-from app.models import Task, cost_cap_exceeded, pipeline_stats
+from app.models import Task, cost_cap_exceeded, filter_tasks, pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
 from app.pipeline_graph import gate_loopback_target, rerun_order, stage_prev
 from app.stages import StageStatus
@@ -261,6 +261,25 @@ class PipelineRunnerMixin:
                     self._write_log(
                         f"  [dim]#{task.id}: {task.description[:80]}  ({files})[/dim]"
                     )
+                if self._confirm.review_tasks:
+                    selected_ids = await self.push_screen_wait(
+                        TaskReviewScreen(decomposed_tasks)
+                    )
+                    if not selected_ids:
+                        self._write_log("[yellow]Stopped by user at task review[/yellow]")
+                        stats_bar.remove_class("working")
+                        stats_bar.update("Stopped by user")
+                        return True
+                    excluded = [
+                        task.id for task in decomposed_tasks if task.id not in selected_ids
+                    ]
+                    if excluded:
+                        self._write_log(
+                            f"[dim]Excluded task(s): "
+                            f"{', '.join(str(task_id) for task_id in excluded)}[/dim]"
+                        )
+                    decomposed_tasks = filter_tasks(decomposed_tasks, selected_ids)
+                    self._last_decomposed_tasks = decomposed_tasks
                 index += 1
                 continue
 
@@ -473,6 +492,24 @@ class PipelineRunnerMixin:
                     self._write_log(
                         f"  [dim]#{task.id}: {task.description[:80]}  ({files})[/dim]"
                     )
+                if self._confirm.review_tasks:
+                    selected_ids = await self.push_screen_wait(
+                        TaskReviewScreen(decomposed_tasks)
+                    )
+                    if not selected_ids:
+                        self._write_log("[yellow]Stopped by user at task review[/yellow]")
+                        failed = True
+                        break
+                    excluded = [
+                        task.id for task in decomposed_tasks if task.id not in selected_ids
+                    ]
+                    if excluded:
+                        self._write_log(
+                            f"[dim]Excluded task(s): "
+                            f"{', '.join(str(task_id) for task_id in excluded)}[/dim]"
+                        )
+                    decomposed_tasks = filter_tasks(decomposed_tasks, selected_ids)
+                    self._last_decomposed_tasks = decomposed_tasks
                 # Forward the plan unchanged; the decompose's product is the task
                 # list, not the "Decomposed into N subtasks" status line.
                 self._stage_outputs[stage.name] = prev_output
