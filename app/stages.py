@@ -24,6 +24,7 @@ class Stage:
     iterable: bool = False
     parallel: bool = False
     worker_prompt_template: str = ""
+    eval_prompt_template: str = ""
     provider: LLMProvider | None = None
     provider_name: str = "claude"
     model: str = ""

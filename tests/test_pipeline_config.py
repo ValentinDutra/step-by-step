@@ -121,6 +121,29 @@ def test_custom_phase_without_skill_or_prompt_fails(tmp_path, monkeypatch):
         resolve_pipeline(config, str(tmp_path))
 
 
+def test_eval_prompt_on_non_gate_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    config = {"phases": {"Planning": {"eval_prompt": "good? {prev_output}"}}}
+    with pytest.raises(ValueError, match="only 'gate' phases"):
+        resolve_pipeline(config, str(tmp_path))
+
+
+def test_both_eval_skill_and_eval_prompt_fails(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    _write_skill(tmp_path, "judge", "verdict {prev_output}\n")
+    config = {"phases": {"Code Quality": {"eval_skill": "judge", "eval_prompt": "x"}}}
+    with pytest.raises(ValueError, match="both 'eval_skill' and 'eval_prompt'"):
+        resolve_pipeline(config, str(tmp_path))
+
+
+def test_eval_skill_resolves_into_gate_stage(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
+    _write_skill(tmp_path, "judge", "verdict {prev_output}\n")
+    config = {"phases": {"Code Quality": {"eval_skill": "judge"}}}
+    stages = {s.name: s for s in resolve_pipeline(config, str(tmp_path))}
+    assert stages["Code Quality"].eval_prompt_template == "verdict {prev_output}\n"
+
+
 def test_leftover_table_for_dropped_phase_is_ignored(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "empty"))
     config = {

@@ -203,11 +203,18 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
         elif "prompt" in entry:
             prompt_template = entry["prompt"]
 
+        eval_prompt_template = ""
+        if "eval_skill" in entry:
+            eval_prompt_template = load_skill(entry["eval_skill"], repo_dir)
+        elif "eval_prompt" in entry:
+            eval_prompt_template = entry["eval_prompt"]
+
         stages.append(
             Stage(
                 name=name,
                 prompt_template=prompt_template,
                 worker_prompt_template=worker_prompt_template,
+                eval_prompt_template=eval_prompt_template,
                 iterable=iterable,
                 parallel=parallel,
                 provider=provider,
@@ -261,6 +268,17 @@ def _validate_pipeline(
         if has_skill and has_prompt:
             raise ValueError(
                 f"Phase '{stage.name}' declares both 'skill' and 'prompt'; declare exactly one."
+            )
+        has_eval_skill = "eval_skill" in entry
+        has_eval_prompt = "eval_prompt" in entry
+        if has_eval_skill and has_eval_prompt:
+            raise ValueError(
+                f"Phase '{stage.name}' declares both 'eval_skill' and 'eval_prompt'; declare exactly one."
+            )
+        if (has_eval_skill or has_eval_prompt) and stage.kind != "gate":
+            raise ValueError(
+                f"Phase '{stage.name}' declares an evaluation prompt but is kind "
+                f"'{stage.kind}'; only 'gate' phases use one."
             )
         if stage.name not in registry:  # custom phase
             if stage.kind != "simple":
