@@ -132,7 +132,20 @@ The pipeline is validated before the run: an empty pipeline, duplicate names, a 
 
 ### Safety
 
-The pipeline runs every provider fully autonomous — no sandbox, no approval prompts (`--dangerously-skip-permissions` for Claude, `--dangerously-bypass-approvals-and-sandbox` for Codex, `--yolo` for Gemini). With a multi-provider config that is up to three agents with full read/write/execute access to the target repository. Run it on a throwaway branch or an isolated clone.
+By default the pipeline runs every provider fully autonomous — no sandbox, no approval prompts (`--dangerously-skip-permissions` for Claude, `--dangerously-bypass-approvals-and-sandbox` for Codex, `--yolo` for Gemini). With a multi-provider config that is up to three agents with full read/write/execute access to the target repository. Run it on a throwaway branch or an isolated clone.
+
+Both behaviors are configurable, in `[defaults]` or per phase (the phase table wins):
+
+```toml
+[defaults]
+skip_permissions = false   # omit the autonomy flag: the CLI runs in its own approval/sandbox mode
+extra_args = []            # raw arguments appended to the provider command
+
+[phases.Implementation]
+skip_permissions = true    # this phase keeps full autonomy
+```
+
+With `skip_permissions = false` the provider CLI falls back to its own approval or sandbox mode. The pipeline runs non-interactively, so there is no terminal to approve actions on — a supervised run may be unable to edit files. Defaults are unchanged: without these keys, every provider runs fully autonomous as before.
 
 ---
 

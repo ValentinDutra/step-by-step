@@ -54,6 +54,8 @@ class PipelineRunnerMixin:
                 defaults.get("provider", "claude"),
                 defaults.get("model", ""),
                 timeout_seconds=self._limits.provider_timeout_seconds,
+                skip_permissions=defaults.get("skip_permissions", True),
+                extra_args=tuple(defaults.get("extra_args", [])),
             )
             return stages
         except ValueError as exc:

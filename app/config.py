@@ -93,13 +93,46 @@ def resolve_limits(config: dict) -> Limits:
     return Limits(**resolved)
 
 
-def provider_for(name: str, model: str, timeout_seconds: int = 600) -> LLMProvider:
+def provider_for(
+    name: str,
+    model: str,
+    timeout_seconds: int = 600,
+    skip_permissions: bool = True,
+    extra_args: tuple[str, ...] = (),
+) -> LLMProvider:
     """Build the provider for ``name``, or raise ``ValueError`` if unknown."""
     cls = _PROVIDERS.get(name)
     if cls is None:
         valid = ", ".join(sorted(_PROVIDERS))
         raise ValueError(f"Unknown provider '{name}'. Valid providers: {valid}")
-    return cls(model, timeout_seconds=timeout_seconds)
+    return cls(
+        model,
+        timeout_seconds=timeout_seconds,
+        skip_permissions=skip_permissions,
+        extra_args=extra_args,
+    )
+
+
+def _provider_flags(
+    table: dict,
+    context: str,
+    fallback_skip_permissions: bool = True,
+    fallback_extra_args: tuple[str, ...] = (),
+) -> tuple[bool, tuple[str, ...]]:
+    """Read and validate ``skip_permissions``/``extra_args`` from a config table."""
+    skip_permissions = table.get("skip_permissions", fallback_skip_permissions)
+    if not isinstance(skip_permissions, bool):
+        raise ValueError(
+            f"{context}: skip_permissions must be a boolean, got {skip_permissions!r}"
+        )
+    extra_args = table.get("extra_args", list(fallback_extra_args))
+    if not isinstance(extra_args, list) or not all(
+        isinstance(argument, str) for argument in extra_args
+    ):
+        raise ValueError(
+            f"{context}: extra_args must be a list of strings, got {extra_args!r}"
+        )
+    return skip_permissions, tuple(extra_args)
 
 
 def _user_config_path() -> Path:
@@ -130,6 +163,7 @@ def resolve_providers(
     default_model = defaults.get("model", "")
     provider_for(default_provider, default_model)  # validate the default eagerly
     limits = resolve_limits(config)
+    default_skip_permissions, default_extra_args = _provider_flags(defaults, "[defaults]")
 
     phases = config.get("phases", {})
     valid = set(phase_names)
@@ -145,8 +179,20 @@ def resolve_providers(
         entry = phases.get(phase_name, {})
         name = entry.get("provider", default_provider)
         model = entry.get("model", default_model)
+        skip_permissions, extra_args = _provider_flags(
+            entry,
+            f"Phase '{phase_name}'",
+            fallback_skip_permissions=default_skip_permissions,
+            fallback_extra_args=default_extra_args,
+        )
         resolved[phase_name] = (
-            provider_for(name, model, timeout_seconds=limits.provider_timeout_seconds),
+            provider_for(
+                name,
+                model,
+                timeout_seconds=limits.provider_timeout_seconds,
+                skip_permissions=skip_permissions,
+                extra_args=extra_args,
+            ),
             model,
         )
     return resolved
@@ -168,6 +214,7 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
     provider_for(default_provider, default_model)  # validate the default eagerly
 
     limits = resolve_limits(config)
+    default_skip_permissions, default_extra_args = _provider_flags(defaults, "[defaults]")
     phases = config.get("phases", {})
     registry = {stage.name: stage for stage in STAGES}
     if "pipeline" in config:
@@ -180,8 +227,18 @@ def resolve_pipeline(config: dict, repo_dir: str) -> list[Stage]:
         entry = phases.get(name, {})
         provider_name = entry.get("provider", default_provider)
         model = entry.get("model", default_model)
+        skip_permissions, extra_args = _provider_flags(
+            entry,
+            f"Phase '{name}'",
+            fallback_skip_permissions=default_skip_permissions,
+            fallback_extra_args=default_extra_args,
+        )
         provider = provider_for(
-            provider_name, model, timeout_seconds=limits.provider_timeout_seconds
+            provider_name,
+            model,
+            timeout_seconds=limits.provider_timeout_seconds,
+            skip_permissions=skip_permissions,
+            extra_args=extra_args,
         )
 
         builtin = registry.get(name)
