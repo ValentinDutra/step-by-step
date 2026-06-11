@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"abc123"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Creating foo.py"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":" with the requested function"}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"Done: created foo.py","total_cost_usd":0.0123}
