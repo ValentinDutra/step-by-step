@@ -173,7 +173,7 @@ class PipelineRunnerMixin:
 
         # ── Final status ─────────────────────────────────────────────────
         if self._artifacts is not None:
-            self._artifacts.finish(pipeline_stats, outcome is not RunOutcome.COMPLETED)
+            self._artifacts.finish(pipeline_stats, outcome.name.lower())
         stats = pipeline_stats
         final_stats = (
             f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
@@ -600,7 +600,7 @@ class PipelineRunnerMixin:
                 break
 
         if self._artifacts is not None:
-            self._artifacts.finish(pipeline_stats, outcome is not RunOutcome.COMPLETED)
+            self._artifacts.finish(pipeline_stats, outcome.name.lower())
         stats = pipeline_stats
         final_stats = (
             f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "

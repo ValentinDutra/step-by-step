@@ -24,11 +24,11 @@ def test_start_record_finish_produce_expected_files(tmp_path):
 
     stats = PipelineStats()
     stats.add_call(0.5)
-    artifacts.finish(stats, failed=False)
+    artifacts.finish(stats, "stopped")
     payload = json.loads((artifacts.run_dir / "run.json").read_text())
     assert payload["total_calls"] == 1
     assert payload["total_cost_usd"] == 0.5
-    assert payload["failed"] is False
+    assert payload["outcome"] == "stopped"
 
 
 def test_failed_stage_records_error(tmp_path):

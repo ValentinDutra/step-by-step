@@ -54,12 +54,12 @@ class RunArtifacts:
         body = stage.output or stage.error or ""
         path.write_text(header + body)
 
-    def finish(self, stats: PipelineStats, failed: bool) -> None:
+    def finish(self, stats: PipelineStats, outcome: str) -> None:
         payload = {
             "total_calls": stats.total_calls,
             "total_cost_usd": stats.total_cost_usd,
             "calls_without_cost": stats.calls_without_cost,
             "total_stage_time": stats.total_stage_time,
-            "failed": failed,
+            "outcome": outcome,
         }
         (self.run_dir / "run.json").write_text(json.dumps(payload, indent=2))
