@@ -20,7 +20,6 @@ from textual.widgets import Label, RichLog, TextArea
 
 from app.agents import decompose_task
 from app.evaluation import evaluate_should_iterate
-from app.providers.claude import ClaudeProvider
 from app.git import create_branch, run_commit_pr_stage
 from app.config import load_config, resolve_providers, provider_for, preflight
 from app.models import Task, pipeline_stats
@@ -219,7 +218,7 @@ class PipelineRunnerMixin(PipelineStepsMixin):
 
             self._set_stream_header("Evaluating quality & technical debt…")
             should_loop = await evaluate_should_iterate(
-                cq_output, self.working_dir, ClaudeProvider()
+                cq_output, self.working_dir, self._default_provider
             )
             if not should_loop:
                 prev_output = cq_output
