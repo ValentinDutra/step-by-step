@@ -130,6 +130,79 @@ Custom phases must be `kind = "simple"` — the other kinds are reserved for the
 
 The pipeline is validated before the run: an empty pipeline, duplicate names, a `parallel` phase with no preceding `decompose`, more than one `commit_pr` or `gate`, a custom phase that isn't `simple`, or one missing both `skill` and `prompt` all abort with a clear message. A `[phases.X]` table for a phase that isn't in the pipeline is ignored.
 
+### Limits
+
+All runtime limits live in an optional `[limits]` table. Defaults match the values the pipeline always used; unknown keys or out-of-range values abort before the run with a clear message:
+
+```toml
+[limits]
+provider_timeout_seconds = 600   # per provider subprocess call
+max_ram_pct = 75.0               # worker fan-out RAM threshold
+max_cost_usd = 5.0               # absent = no cap
+default_max_iterations = 3       # gate re-run cap (a phase's max_iterations wins)
+prev_output_chars = 8000         # context passed to single-agent stages
+worker_prev_output_chars = 6000  # context passed to each parallel worker
+evaluation_output_chars = 4000   # stage output shown to the quality-gate evaluator
+commit_context_chars = 3000      # context for the commit/PR generator
+diff_stat_chars = 1500           # diff stat shown to the commit/PR generator
+feedback_chars = 3000            # gate feedback injected into the re-run
+```
+
+When `max_cost_usd` is set, accumulated cost is checked at every stage boundary and before each gate loop-back; the run stops with "Cost cap reached" once it is hit. A parallel fan-out can overshoot the cap before the next boundary check — the cap bounds stage starts, not in-flight workers. Each stage's completion line in the activity log shows that stage's cost delta.
+
+### Confirmations
+
+The `[confirm]` table adds user checkpoints to an otherwise fully autonomous run:
+
+```toml
+[confirm]
+phases = ["Commit & PR"]   # pause before these phases; Commit & PR shows git status + diff stat
+review_tasks = true        # review/exclude subtasks after Decomposition, before the worker fan-out
+step = false               # pause after every completed stage (same as the --step flag)
+```
+
+Cancelling at any checkpoint stops the run. Stage pills stay clickable, so you can resume from the stopped phase.
+
+### Overriding the internal prompts
+
+Besides the per-stage `skill`/`prompt` overrides, the two internal agents accept custom prompts:
+
+- **Decomposition** — `skill`/`prompt` on `[phases.Decomposition]`. The template receives `{prompt}` (the task) and `{prev_output}` (the plan) and must keep the JSON-array output contract (`id`, `description`, `files`); non-JSON output falls back to a single subtask.
+- **Quality-gate evaluator** — `eval_prompt` or `eval_skill` (exactly one, only on the gate phase). The template receives the stage output as `{prev_output}` and must answer only `yes` (iterate) or `no` (proceed).
+
+```toml
+[phases."Code Quality"]
+eval_prompt = "Does this output contain blocking bugs? Answer only yes or no.\n\n{prev_output}"
+```
+
+### Full example
+
+```toml
+pipeline = ["Planning", "Decomposition", "Implementation", "Tests & Validation", "Code Quality", "Commit & PR"]
+
+[defaults]
+provider = "claude"
+model = ""
+skip_permissions = true
+
+[limits]
+provider_timeout_seconds = 900
+max_cost_usd = 10.0
+
+[confirm]
+phases = ["Commit & PR"]
+review_tasks = true
+
+[artifacts]
+enabled = true
+
+[phases."Code Quality"]
+provider = "codex"
+model = "gpt-5.1-codex"
+max_iterations = 2
+eval_prompt = "Real blocking issues? Answer only yes or no.\n\n{prev_output}"
+```
+
 ### Run artifacts
 
 Set `[artifacts] enabled = true` to persist every run to disk for later inspection — the full output of each stage (not just the 300-char log preview), the original prompt, and the run stats:
