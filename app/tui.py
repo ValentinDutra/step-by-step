@@ -20,11 +20,12 @@ from app.widgets import StagePill, SystemMonitor
 class PipelineApp(PipelineRunnerMixin, App):
     """Multi-agent Dev Pipeline TUI."""
 
-    def __init__(self, working_dir: str = "", prompt_file: str = "", config_path: str = "", **kwargs):
+    def __init__(self, working_dir: str = "", prompt_file: str = "", config_path: str = "", step_mode: bool = False, **kwargs):
         import os
         self.working_dir = working_dir or os.getcwd()
         self.prompt_file = prompt_file
         self.config_path = config_path
+        self.step_mode = step_mode
         super().__init__(**kwargs)
 
     TITLE = "Dev Pipeline — Multi-Agent"
@@ -180,6 +181,7 @@ def main():
     parser.add_argument("-f", "--prompt-file", default="", metavar="FILE", help="Read prompt from FILE and start pipeline immediately")
     parser.add_argument("--config", default="", metavar="PATH", help="Path to a step-by-step.toml provider config (overrides project/user config)")
     parser.add_argument("--check", action="store_true", help="Validate the config and print the resolved pipeline without running anything")
+    parser.add_argument("--step", action="store_true", help="Pause after each completed stage until you confirm")
     args = parser.parse_args()
 
     repo = os.path.abspath(os.path.expanduser(args.repo))
@@ -206,7 +208,7 @@ def main():
 
         raise SystemExit(run_check(repo, config_path))
 
-    app = PipelineApp(working_dir=repo, prompt_file=prompt_file, config_path=config_path)
+    app = PipelineApp(working_dir=repo, prompt_file=prompt_file, config_path=config_path, step_mode=args.step)
     app.run()
 
 

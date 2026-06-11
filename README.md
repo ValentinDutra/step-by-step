@@ -173,6 +173,12 @@ pipeline /path/to/your/repo
 
 # Load a prompt from a file and start immediately
 pipeline /path/to/your/repo -f prompt.txt
+
+# Validate the config and print the resolved pipeline, without running anything
+pipeline /path/to/your/repo --check
+
+# Step mode: pause after each completed stage until you confirm
+pipeline /path/to/your/repo --step
 ```
 
 **uvx (no install):**

@@ -200,6 +200,7 @@ class PipelineRunnerMixin:
         gate_iterations: dict[int, int] = {}
         feedback = ""
         index = 0
+        step_enabled = getattr(self, "step_mode", False) or self._confirm.step
 
         while index < len(stages):
             stage = stages[index]
@@ -376,6 +377,15 @@ class PipelineRunnerMixin:
                     )
                 feedback = ""
 
+            if step_enabled and stage.kind != "commit_pr" and index < len(stages) - 1:
+                if not await self._ask_confirm(
+                    f"{stage.name} completed — continue?", output
+                ):
+                    self._write_log(f"[yellow]Stopped by user after {stage.name}[/yellow]")
+                    stats_bar.remove_class("working")
+                    stats_bar.update("Stopped by user")
+                    return True
+
             index += 1
 
         return False
@@ -436,6 +446,7 @@ class PipelineRunnerMixin:
             else []
         )
         failed = False
+        step_enabled = getattr(self, "step_mode", False) or self._confirm.step
 
         self._write_log(
             f"\n[bold cyan]━━━ Re-running from: {from_stage_name} ━━━[/bold cyan]\n"
@@ -573,6 +584,15 @@ class PipelineRunnerMixin:
                     self._write_log(f"[dim]{preview}[/dim]\n")
                 self._stage_outputs[stage.name] = output
                 prev_output = output
+                if step_enabled and stage.kind != "commit_pr" and index < len(stages) - 1:
+                    if not await self._ask_confirm(
+                        f"{stage.name} completed — continue?", output
+                    ):
+                        self._write_log(
+                            f"[yellow]Stopped by user after {stage.name}[/yellow]"
+                        )
+                        failed = True
+                        break
             else:
                 self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
                 failed = True
