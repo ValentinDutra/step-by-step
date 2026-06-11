@@ -95,4 +95,4 @@ A `LLMProvider` Protocol with one async method (`run`) and three implementations
 
 - [x] Update `README.md`: add Codex CLI and Gemini CLI to Requirements (install commands `npm install -g @openai/codex` and `npm install -g @google/gemini-cli`, plus auth notes — `codex` login, and `gemini` login or `GEMINI_API_KEY`), add a "Configuration" section documenting `step-by-step.toml` precedence and the `[defaults]`/`[phases."Name"]` schema with the example from issue #16, and add a safety note that the pipeline runs each provider fully autonomous (no sandbox, no approval prompts) across up to three agents — use a throwaway repo/branch. Prose only; no `- [ ]` items in the README.
 
-- [ ] Run full verification: `uv run pytest`. Fix any failures. Confirm a no-config invocation builds all-Claude stages and the stats bar formats cost without error via `format_cost()`.
+- [x] Run full verification: `uv run pytest`. Fix any failures. Confirm a no-config invocation builds all-Claude stages and the stats bar formats cost without error via `format_cost()`.
