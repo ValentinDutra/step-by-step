@@ -50,23 +50,32 @@ class ClaudeProvider:
 
     name = "claude"
 
-    def __init__(self, model: str = "", timeout_seconds: int = 600) -> None:
+    def __init__(
+        self,
+        model: str = "",
+        timeout_seconds: int = 600,
+        skip_permissions: bool = True,
+        extra_args: tuple[str, ...] = (),
+    ) -> None:
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.skip_permissions = skip_permissions
+        self.extra_args = tuple(extra_args)
+
+    def _build_cmd(self) -> list[str]:
+        cmd = ["claude", "--print"]
+        if self.skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+        cmd += ["--output-format", "stream-json", "--verbose"]
+        if self.model:
+            cmd += ["--model", self.model]
+        cmd += list(self.extra_args)
+        return cmd
 
     async def run(
         self, prompt: str, working_dir: str, on_stream=None
     ) -> ProviderResult:
-        cmd = [
-            "claude",
-            "--print",
-            "--dangerously-skip-permissions",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-        ]
-        if self.model:
-            cmd += ["--model", self.model]
+        cmd = self._build_cmd()
 
         proc = None
         stderr_task: asyncio.Task | None = None

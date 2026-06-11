@@ -64,9 +64,26 @@ class GeminiProvider:
 
     name = "gemini"
 
-    def __init__(self, model: str = "", timeout_seconds: int = 600) -> None:
+    def __init__(
+        self,
+        model: str = "",
+        timeout_seconds: int = 600,
+        skip_permissions: bool = True,
+        extra_args: tuple[str, ...] = (),
+    ) -> None:
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.skip_permissions = skip_permissions
+        self.extra_args = tuple(extra_args)
+
+    def _build_cmd(self, prompt: str) -> list[str]:
+        cmd = ["gemini", "-p", prompt]
+        if self.skip_permissions:
+            cmd.append("--yolo")
+        if self.model:
+            cmd += ["-m", self.model]
+        cmd += list(self.extra_args)
+        return cmd
 
     async def _spawn(
         self, args: list[str], working_dir: str
@@ -111,9 +128,7 @@ class GeminiProvider:
     async def run(
         self, prompt: str, working_dir: str, on_stream=None
     ) -> ProviderResult:
-        base = ["gemini", "-p", prompt, "--yolo"]
-        if self.model:
-            base += ["-m", self.model]
+        base = self._build_cmd(prompt)
 
         rc, out, err = await self._spawn(base + ["--output-format", "json"], working_dir)
         if rc is None:
