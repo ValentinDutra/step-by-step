@@ -1,6 +1,7 @@
 import asyncio
 
 from app.agents import decompose_task
+from app.config import Limits
 from app.evaluation import evaluate_should_iterate
 from app.providers.base import ProviderResult
 
@@ -52,6 +53,20 @@ def test_custom_eval_template_sent_with_stage_output(tmp_path):
     )
     assert provider.prompts == ["JUDGE: the output"]
     assert should_iterate is True
+
+
+def test_default_eval_template_truncates_stage_output_per_limits(tmp_path):
+    provider = _StubProvider(output="no")
+    should_iterate = asyncio.run(
+        evaluate_should_iterate(
+            "x" * 100, str(tmp_path), provider, limits=Limits(evaluation_output_chars=10)
+        )
+    )
+    assert should_iterate is False
+    rendered = provider.prompts[0]
+    assert "quality gate agent" in rendered
+    assert "x" * 10 in rendered
+    assert "x" * 11 not in rendered
 
 
 def test_non_json_output_falls_back_to_single_task(tmp_path):

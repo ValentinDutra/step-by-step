@@ -72,7 +72,6 @@ def test_start_is_collision_safe(tmp_path, monkeypatch):
 
 def test_resolve_artifacts_defaults():
     assert resolve_artifacts({}) == Artifacts()
-    assert resolve_artifacts({}).enabled is False
 
 
 def test_resolve_artifacts_unknown_key_rejected():

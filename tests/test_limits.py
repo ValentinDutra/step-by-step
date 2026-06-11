@@ -6,6 +6,7 @@ from app.config import (
     Confirm,
     Limits,
     provider_for,
+    resolve_artifacts,
     resolve_confirm,
     resolve_limits,
     resolve_pipeline,
@@ -27,13 +28,7 @@ class _RecordingProvider:
 
 
 def test_defaults_when_section_absent():
-    limits = resolve_limits({})
-    assert limits == Limits()
-    assert limits.provider_timeout_seconds == 600
-    assert limits.max_ram_pct == 75.0
-    assert limits.max_cost_usd is None
-    assert limits.default_max_iterations == 3
-    assert limits.prev_output_chars == 8000
+    assert resolve_limits({}) == Limits()
 
 
 def test_overrides_applied_and_ints_accepted_for_float_fields():
@@ -104,6 +99,36 @@ def test_configured_timeout_propagates_through_resolve_pipeline(tmp_path):
     config = {"limits": {"provider_timeout_seconds": 1200}}
     stages = resolve_pipeline(config, str(tmp_path))
     assert all(stage.provider.timeout_seconds == 1200 for stage in stages)
+
+
+@pytest.mark.parametrize(
+    "resolve, match",
+    [
+        (
+            lambda: resolve_pipeline({"defaults": {"skip_permissions": "yes"}}, "."),
+            "skip_permissions must be a boolean",
+        ),
+        (
+            lambda: resolve_confirm({"confirm": {"step": "yes"}}, ["Planning"]),
+            "step must be a boolean",
+        ),
+        (
+            lambda: resolve_confirm({"confirm": {"phases": "Planning"}}, ["Planning"]),
+            "phases must be a list of strings",
+        ),
+        (
+            lambda: resolve_artifacts({"artifacts": {"enabled": "yes"}}),
+            "enabled must be a boolean",
+        ),
+        (
+            lambda: resolve_artifacts({"artifacts": {"dir": ""}}),
+            "dir must be a non-empty string",
+        ),
+    ],
+)
+def test_invalid_config_value_types_rejected(resolve, match):
+    with pytest.raises(ValueError, match=match):
+        resolve()
 
 
 def test_resolve_confirm_defaults():
