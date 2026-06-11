@@ -20,6 +20,7 @@ from textual.widgets import Label, RichLog, TextArea
 
 from app.agents import decompose_task
 from app.artifacts import RunArtifacts
+from app.confirm import ConfirmScreen
 from app.evaluation import evaluate_should_iterate
 from app.git import create_branch, run_commit_pr_stage
 from app.config import (
@@ -39,6 +40,14 @@ from app.widgets import StagePill
 
 class PipelineRunnerMixin:
     """Mixin providing run_pipeline and rerun_from_stage workers."""
+
+    async def _ask_confirm(self, title: str, body: str) -> bool:
+        """Show a blocking confirmation modal; True = continue, False = cancel.
+
+        Only safe from within a Textual worker (``run_pipeline`` /
+        ``rerun_from_stage`` are ``@work`` methods).
+        """
+        return bool(await self.push_screen_wait(ConfirmScreen(title, body)))
 
     def _resolve_or_report(self, stats_bar, prompt_input):
         """Resolve the configured pipeline, or report an invalid config and abort.

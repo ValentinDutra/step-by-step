@@ -189,3 +189,37 @@ Screen {
 #net-in-spark > .sparkline--max-color {
     color: $secondary;
 }
+
+/* ── Confirmation modals ─────────────────────────────────────────── */
+ConfirmScreen, TaskReviewScreen {
+    align: center middle;
+}
+
+#confirm-panel, #task-review-panel {
+    width: 80;
+    height: auto;
+    max-height: 80%;
+    border: round $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#confirm-title, #task-review-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#confirm-body-scroll, #task-review-scroll {
+    height: auto;
+    max-height: 20;
+    margin-bottom: 1;
+}
+
+#confirm-buttons, #task-review-buttons {
+    height: 3;
+    align-horizontal: right;
+}
+
+#confirm-buttons Button, #task-review-buttons Button {
+    margin-left: 2;
+}
