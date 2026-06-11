@@ -13,6 +13,8 @@
 - Gemini default model is gemini-3.5-flash (router uses gemini-3.1-flash-lite). Model names are 3.x now; config examples using gemini-2.5-pro are stale but pass-through so harmless.
 - preflight() was ALREADY added to app/config.py in Task 6. Task 8 only needs to write its test + wire it into runner.py (don't redefine it).
 - Config tests must monkeypatch XDG_CONFIG_HOME or they'd read the real ~/.config/step-by-step/config.toml.
+- PLAN GAP: app/git.py ALSO imported call_claude (not listed in the plan). Two uses: run_commit_pr_stage (has `stage` -> uses stage.provider) and create_branch (NO stage -> injected `provider` param). create_branch caller in runner.py:66 passes stage_map["Commit & PR"][1].provider. Handled during 9b.
+- evaluate gate: provider.run already records cost, so evaluate does NOT add_call separately. Callers (runner.py, runner_steps.py) pass ClaudeProvider() interim; task 11b swaps to self._default_provider.
 - Dataclass/Protocol style lives in app/models.py; providers in app/providers/.
 - pytest ALREADY set up in Task 2: dev group `pytest>=9.0.3` + `[tool.pytest.ini_options] pythonpath=["."]`. Task 3 should skip "add pytest", just verify.
 - Float cost asserts: use `pytest.approx` (0.30+0.12 != 0.42 exactly); but `:.4f` formatting rounds fine for format_cost tests.

@@ -19,7 +19,8 @@ from textual import work
 from textual.widgets import Label, RichLog, TextArea
 
 from app.agents import decompose_task
-from app.claude import evaluate_should_iterate
+from app.evaluation import evaluate_should_iterate
+from app.providers.claude import ClaudeProvider
 from app.git import create_branch, run_commit_pr_stage
 from app.models import Task, pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
@@ -66,6 +67,7 @@ class PipelineRunnerMixin(PipelineStepsMixin):
         branch_name = await create_branch(
             prompt,
             self.working_dir,
+            stage_map["Commit & PR"][1].provider,
             on_log=lambda msg: self._write_log(f"  [dim]{msg}[/dim]"),
         )
         if branch_name:
@@ -181,7 +183,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             self._stage_outputs["Code Quality"] = cq_output
 
             self._set_stream_header("Evaluating quality & technical debt…")
-            should_loop = await evaluate_should_iterate(cq_output, self.working_dir)
+            should_loop = await evaluate_should_iterate(
+                cq_output, self.working_dir, ClaudeProvider()
+            )
             if not should_loop:
                 prev_output = cq_output
                 self._write_log(
