@@ -44,6 +44,23 @@ class PipelineRunnerMixin(PipelineStepsMixin):
         )
         return resolved, default_provider
 
+    def _resolve_or_report(self, stats_bar, prompt_input):
+        """Resolve providers, or report an invalid config to the UI and abort.
+
+        Returns ``(resolved, default_provider)`` on success, or ``None`` after
+        rendering the error (caller should return).
+        """
+        try:
+            return self._resolve_providers()
+        except ValueError as exc:
+            self._write_log(f"[red]✗ Config error:[/red] {exc}")
+            stats_bar.update("Config error")
+            stats_bar.remove_class("working")
+            stats_bar.add_class("error")
+            prompt_input.disabled = False
+            self.running = False
+            return None
+
     @work(exclusive=True)
     async def run_pipeline(self, prompt: str):
         self.running = True
@@ -56,16 +73,10 @@ class PipelineRunnerMixin(PipelineStepsMixin):
 
         pipeline_stats.reset()
 
-        try:
-            resolved, self._default_provider = self._resolve_providers()
-        except ValueError as exc:
-            self._write_log(f"[red]✗ Config error:[/red] {exc}")
-            stats_bar.update("Config error")
-            stats_bar.remove_class("working")
-            stats_bar.add_class("error")
-            prompt_input.disabled = False
-            self.running = False
+        resolved_pair = self._resolve_or_report(stats_bar, prompt_input)
+        if resolved_pair is None:
             return
+        resolved, self._default_provider = resolved_pair
 
         missing = preflight(resolved)
         if missing:
@@ -399,7 +410,10 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             else []
         )
 
-        resolved, self._default_provider = self._resolve_providers()
+        resolved_pair = self._resolve_or_report(stats_bar, prompt_input)
+        if resolved_pair is None:
+            return
+        resolved, self._default_provider = resolved_pair
         fresh_stages = {s.name: s for s in create_stages(resolved)}
         failed = False
 
