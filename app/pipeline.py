@@ -2,7 +2,7 @@
 
 from app.models import Task
 from app.skills import render_prompt
-from app.stages import Stage, StageStatus
+from app.stages import Stage
 from app.workers import run_workers_parallel, aggregate_results
 
 

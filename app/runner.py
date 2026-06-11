@@ -131,7 +131,7 @@ class PipelineRunnerMixin:
         if not failed:
             stats_bar.add_class("success")
             stats_bar.update(f"✓ Done — {final_stats}")
-            self._write_log(f"\n[bold green]All stages completed![/bold green]")
+            self._write_log("\n[bold green]All stages completed![/bold green]")
             self._set_stream_header(f"Done — {final_stats}")
         else:
             stats_bar.add_class("error")
@@ -445,7 +445,7 @@ class PipelineRunnerMixin:
         if not failed:
             stats_bar.add_class("success")
             stats_bar.update(f"✓ Done — {final_stats}")
-            self._write_log(f"\n[bold green]Re-run complete![/bold green]")
+            self._write_log("\n[bold green]Re-run complete![/bold green]")
             self._set_stream_header(f"Done — {final_stats}")
         else:
             stats_bar.add_class("error")

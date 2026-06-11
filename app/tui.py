@@ -3,7 +3,6 @@
 import re
 from datetime import datetime
 
-from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical
@@ -14,7 +13,7 @@ from textual.widgets import Header, Label, RichLog, Static, TextArea
 from app.config import load_config, resolve_pipeline
 from app.models import pipeline_stats
 from app.runner import PipelineRunnerMixin
-from app.stages import StageStatus, create_stages
+from app.stages import create_stages
 from app.widgets import StagePill, SystemMonitor
 
 
@@ -88,7 +87,6 @@ class PipelineApp(PipelineRunnerMixin, App):
         self.set_interval(1.0, self._refresh_stats)
         self.set_interval(1.0, self._refresh_monitor)
         if self.prompt_file:
-            import os
             try:
                 text = open(self.prompt_file).read().strip()
                 ta = self.query_one("#prompt-input", TextArea)
