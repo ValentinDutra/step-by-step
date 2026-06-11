@@ -1,5 +1,6 @@
 """Pipeline stage runners."""
 
+from app.config import Limits
 from app.models import Task
 from app.skills import render_prompt
 from app.stages import Stage
@@ -13,12 +14,13 @@ async def run_stage(
     working_dir: str,
     iteration_context: str = "",
     on_stream=None,
+    limits: Limits = Limits(),
 ) -> str:
     """Run a single pipeline stage (manager mode — single agent)."""
     stage.start()
 
     full_prompt = render_prompt(
-        stage.prompt_template, prompt, prev_output[:8000], iteration_context
+        stage.prompt_template, prompt, prev_output[: limits.prev_output_chars], iteration_context
     )
 
     result = await stage.provider.run(full_prompt, working_dir, on_stream=on_stream)
@@ -41,6 +43,7 @@ async def run_stage_parallel(
     on_worker_start=None,
     on_worker_complete=None,
     on_stream=None,
+    limits: Limits = Limits(),
 ) -> str:
     """Run a pipeline stage in parallel worker mode (fan-out to multiple agents)."""
     stage.start()
@@ -51,7 +54,7 @@ async def run_stage_parallel(
             prompt=prompt,
             task_description=task.description,
             task_files=", ".join(task.files) if task.files else "as needed",
-            prev_output=prev_output[:6000],
+            prev_output=prev_output[: limits.worker_prev_output_chars],
             iteration_context=iteration_context,
         )
         for task in tasks
@@ -62,6 +65,7 @@ async def run_stage_parallel(
         worker_prompts,
         working_dir,
         stage.provider,
+        max_ram_pct=limits.max_ram_pct,
         on_start=on_worker_start,
         on_complete=on_worker_complete,
         on_stream=on_stream,

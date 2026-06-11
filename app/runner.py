@@ -226,6 +226,7 @@ class PipelineRunnerMixin:
                     iteration_context=iteration_context,
                     on_worker_complete=on_worker_complete,
                     on_stream=on_parallel_stream,
+                    limits=self._limits,
                 )
             elif stage.kind == "commit_pr":
                 def on_pr_log(msg, _self=self):
@@ -234,11 +235,13 @@ class PipelineRunnerMixin:
                 output = await run_commit_pr_stage(
                     stage, prompt, prev_output, self.working_dir,
                     on_stream=on_stream, on_log=on_pr_log,
+                    limits=self._limits,
                 )
             else:  # simple or gate
                 output = await run_stage(
                     stage, prompt, prev_output, self.working_dir,
                     iteration_context=iteration_context, on_stream=on_stream,
+                    limits=self._limits,
                 )
 
             if pill is not None:
@@ -262,7 +265,8 @@ class PipelineRunnerMixin:
             # ── gate: evaluate, and loop back to the nearest decompose ───
             if stage.kind == "gate":
                 should_loop = await evaluate_should_iterate(
-                    output, self.working_dir, self._default_provider
+                    output, self.working_dir, self._default_provider,
+                    limits=self._limits,
                 )
                 target = gate_loopback_target(stages, index)
                 count = gate_iterations.get(index, 0)
@@ -270,7 +274,7 @@ class PipelineRunnerMixin:
                     gate_iterations[index] = count + 1
                     feedback = (
                         f"Code Quality & Technical Debt review #{count + 1} found issues "
-                        f"that require a full re-implementation pass:\n{output[:3000]}\n\n"
+                        f"that require a full re-implementation pass:\n{output[: self._limits.feedback_chars]}\n\n"
                         "Fix ALL reported quality and technical debt issues in the new implementation."
                     )
                     self._write_log(
@@ -410,6 +414,7 @@ class PipelineRunnerMixin:
                     stage, decomposed_tasks, prompt, prev_output, self.working_dir,
                     on_worker_complete=on_worker_complete,
                     on_stream=on_parallel_stream,
+                    limits=self._limits,
                 )
             elif stage.kind == "commit_pr":
                 self._write_log(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
@@ -420,11 +425,13 @@ class PipelineRunnerMixin:
                 output = await run_commit_pr_stage(
                     stage, prompt, prev_output, self.working_dir,
                     on_stream=on_stream, on_log=on_pr_log,
+                    limits=self._limits,
                 )
             else:  # simple or gate (single pass on re-run)
                 self._write_log(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
                 output = await run_stage(
-                    stage, prompt, prev_output, self.working_dir, on_stream=on_stream
+                    stage, prompt, prev_output, self.working_dir, on_stream=on_stream,
+                    limits=self._limits,
                 )
 
             if pill is not None:

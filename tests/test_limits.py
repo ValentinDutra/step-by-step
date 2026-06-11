@@ -1,6 +1,22 @@
+import asyncio
+
 import pytest
 
 from app.config import Limits, provider_for, resolve_limits, resolve_pipeline
+from app.pipeline import run_stage
+from app.providers.base import ProviderResult
+from app.stages import Stage
+
+
+class _RecordingProvider:
+    name = "stub"
+
+    def __init__(self):
+        self.prompts = []
+
+    async def run(self, prompt, working_dir, on_stream=None):
+        self.prompts.append(prompt)
+        return ProviderResult(True, "ok", cost_usd=None)
 
 
 def test_defaults_when_section_absent():
@@ -58,6 +74,18 @@ def test_default_max_iterations_reaches_stage(tmp_path):
     stages = resolve_pipeline(config, str(tmp_path))
     gate = next(stage for stage in stages if stage.kind == "gate")
     assert gate.max_iterations == 5
+
+
+def test_run_stage_truncates_prev_output_per_limits(tmp_path):
+    provider = _RecordingProvider()
+    stage = Stage(name="X", prompt_template="PREV:{prev_output}", provider=provider)
+    output = asyncio.run(
+        run_stage(
+            stage, "task", "a" * 100, str(tmp_path), limits=Limits(prev_output_chars=10)
+        )
+    )
+    assert output == "ok"
+    assert provider.prompts == ["PREV:" + "a" * 10]
 
 
 def test_provider_for_timeout_reaches_provider():
