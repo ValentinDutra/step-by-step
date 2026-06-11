@@ -51,6 +51,31 @@ class Limits:
     feedback_chars: int = 3000
 
 
+@dataclass(frozen=True)
+class Artifacts:
+    enabled: bool = False
+    dir: str = ".step-by-step/runs"
+
+
+def resolve_artifacts(config: dict) -> Artifacts:
+    """Build :class:`Artifacts` from the optional ``[artifacts]`` section."""
+    section = config.get("artifacts", {})
+    valid_keys = [field.name for field in fields(Artifacts)]
+    unknown = sorted(set(section) - set(valid_keys))
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) in [artifacts]: {', '.join(unknown)}. "
+            f"Valid keys: {', '.join(valid_keys)}"
+        )
+    enabled = section.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError(f"[artifacts] enabled must be a boolean, got {enabled!r}")
+    directory = section.get("dir", Artifacts.dir)
+    if not isinstance(directory, str) or not directory:
+        raise ValueError(f"[artifacts] dir must be a non-empty string, got {directory!r}")
+    return Artifacts(enabled=enabled, dir=directory)
+
+
 _FLOAT_LIMIT_KEYS = {"max_ram_pct", "max_cost_usd"}
 
 
