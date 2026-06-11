@@ -1,5 +1,6 @@
 """Modal confirmation screens for pipeline checkpoints."""
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -26,7 +27,9 @@ class ConfirmScreen(ModalScreen[bool]):
         with Vertical(id="confirm-panel"):
             yield Label(self._title, id="confirm-title")
             with VerticalScroll(id="confirm-body-scroll"):
-                yield Static(self._body, id="confirm-body")
+                # markup=False: bodies carry raw LLM/git output where brackets
+                # (e.g. ``list[int]``) must render literally, not as style tags.
+                yield Static(self._body, id="confirm-body", markup=False)
             with Horizontal(id="confirm-buttons"):
                 yield Button("Continue", variant="primary", id="confirm-continue")
                 yield Button("Cancel", variant="error", id="confirm-cancel")
@@ -64,8 +67,10 @@ class TaskReviewScreen(ModalScreen[list[int] | None]):
             with VerticalScroll(id="task-review-scroll"):
                 for task in self._tasks:
                     files = ", ".join(task.files) if task.files else "—"
+                    # rich.Text label: task descriptions carry raw LLM output
+                    # where brackets must render literally, not as style tags.
                     yield Checkbox(
-                        f"#{task.id} {task.description} ({files})",
+                        Text(f"#{task.id} {task.description} ({files})"),
                         value=True,
                         id=f"task-checkbox-{task.id}",
                     )
