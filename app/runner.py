@@ -23,20 +23,18 @@ from app.evaluation import evaluate_should_iterate
 from app.git import create_branch, run_commit_pr_stage
 from app.config import (
     load_config,
-    resolve_providers,
     resolve_pipeline,
     provider_for,
     preflight,
 )
 from app.models import Task, pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
-from app.pipeline_graph import gate_loopback_target
-from app.runner_steps import PipelineStepsMixin
-from app.stages import STAGES, StageStatus, create_stages
-from app.widgets import RERUN_ORDER, STAGE_PREV, StagePill
+from app.pipeline_graph import gate_loopback_target, rerun_order, stage_prev
+from app.stages import StageStatus
+from app.widgets import StagePill
 
 
-class PipelineRunnerMixin(PipelineStepsMixin):
+class PipelineRunnerMixin:
     """Mixin providing run_pipeline and rerun_from_stage workers."""
 
     def _resolve_or_report(self, stats_bar, prompt_input):
@@ -303,24 +301,40 @@ class PipelineRunnerMixin(PipelineStepsMixin):
         for pill in pills:
             pill.remove_class("pill-rerunnable")
 
-        from_idx = RERUN_ORDER.index(from_stage_name)
+        stages = self._resolve_or_report(stats_bar, prompt_input)
+        if stages is None:
+            return
+
+        order = rerun_order(stages)
+        if from_stage_name not in order:
+            self._write_log(
+                f"[red]✗ '{from_stage_name}' is not in the current pipeline[/red]"
+            )
+            stats_bar.remove_class("working")
+            stats_bar.add_class("error")
+            stats_bar.update("Stage not in pipeline")
+            prompt_input.disabled = False
+            self.running = False
+            for pill in self.query(StagePill):
+                pill.add_class("pill-rerunnable")
+            return
+
+        from_idx = order.index(from_stage_name)
         for pill in pills[from_idx:]:
             pill.update_status(StageStatus.PENDING)
 
-        prev_name = STAGE_PREV.get(from_stage_name)
+        prev_name = stage_prev(stages).get(from_stage_name)
         prev_output = self._stage_outputs.get(prev_name, "") if prev_name else ""
         prompt = self._last_prompt
+
+        first_decompose = next(
+            (i for i, s in enumerate(stages) if s.kind == "decompose"), None
+        )
         decomposed_tasks = (
             self._last_decomposed_tasks
-            if from_idx > RERUN_ORDER.index("Decomposition")
+            if first_decompose is not None and from_idx > first_decompose
             else []
         )
-
-        resolved_pair = self._resolve_or_report(stats_bar, prompt_input)
-        if resolved_pair is None:
-            return
-        resolved, self._default_provider = resolved_pair
-        fresh_stages = {s.name: s for s in create_stages(resolved)}
         failed = False
 
         self._write_log(
@@ -328,19 +342,20 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             f"[dim]Using context from previous run[/dim]"
         )
 
-        for stage_name in RERUN_ORDER[from_idx:]:
-            pill_idx = RERUN_ORDER.index(stage_name)
-            pill = pills[pill_idx]
-            stage = fresh_stages[stage_name]
-
-            pill.update_status(StageStatus.RUNNING)
+        for index in range(from_idx, len(stages)):
+            stage = stages[index]
+            pill = pills[index] if index < len(pills) else None
+            if pill is not None:
+                pill.update_status(StageStatus.RUNNING)
             self._clear_stream()
-            self._set_stream_header(stage_name)
+            self._set_stream_header(stage.name)
 
-            if stage_name == "Decomposition":
-                self._set_stream_header("Decomposition — splitting tasks…")
+            def on_stream(chunk, _self=self):
+                _self._append_stream(chunk)
+
+            if stage.kind == "decompose":
                 self._write_log(
-                    f"\n[bold yellow]▶ Decomposition[/bold yellow] "
+                    f"\n[bold yellow]▶ {stage.name}[/bold yellow] "
                     f"[dim](manager splitting tasks)[/dim]"
                 )
                 stage.start()
@@ -349,47 +364,22 @@ class PipelineRunnerMixin(PipelineStepsMixin):
                 )
                 stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
                 self._last_decomposed_tasks = decomposed_tasks
-                pill.update_status(StageStatus.COMPLETED, stage.elapsed)
+                if pill is not None:
+                    pill.update_status(StageStatus.COMPLETED, stage.elapsed)
                 self._write_log(
-                    f"[green]✓ Decomposition[/green] — {StagePill._fmt(stage.elapsed)} "
+                    f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)} "
                     f"→ [bold]{len(decomposed_tasks)} subtask(s)[/bold]"
                 )
-                for t in decomposed_tasks:
-                    files = ", ".join(t.files) if t.files else "—"
-                    self._write_log(f"  [dim]#{t.id}: {t.description[:80]}  ({files})[/dim]")
-
-            elif stage_name == "Commit & PR":
-                self._write_log(f"\n[bold yellow]▶ {stage_name}[/bold yellow]")
-
-                def on_pr_stream(chunk, _self=self):
-                    _self._append_stream(chunk)
-
-                def on_pr_log(msg, _self=self):
-                    _self._write_log(f"  [dim]{msg}[/dim]")
-
-                output = await run_commit_pr_stage(
-                    stage, prompt, prev_output, self.working_dir,
-                    on_stream=on_pr_stream, on_log=on_pr_log,
-                )
-                pill.update_status(stage.status, stage.elapsed)
-                if stage.status == StageStatus.COMPLETED:
+                for task in decomposed_tasks:
+                    files = ", ".join(task.files) if task.files else "—"
                     self._write_log(
-                        f"[green]✓ {stage_name}[/green] — {StagePill._fmt(stage.elapsed)}"
+                        f"  [dim]#{task.id}: {task.description[:80]}  ({files})[/dim]"
                     )
-                    self._stage_outputs[stage_name] = output
-                    prev_output = output
-                else:
-                    self._write_log(f"[red]✗ {stage_name} failed:[/red] {stage.error}")
-                    failed = True
-                    break
+                self._stage_outputs[stage.name] = stage.output
+                prev_output = stage.output
+                continue
 
-            elif stage.parallel and decomposed_tasks:
-                self._set_stream_header(f"{stage_name} — {len(decomposed_tasks)} workers")
-                self._write_log(
-                    f"\n[bold yellow]▶ {stage_name}[/bold yellow] "
-                    f"[dim]({len(decomposed_tasks)} parallel workers)[/dim]"
-                )
-
+            if stage.kind == "parallel":
                 def on_worker_complete(task, result, _self=self):
                     color = "green" if result.success else "red"
                     status_str = "completed" if result.success else "failed"
@@ -401,48 +391,49 @@ class PipelineRunnerMixin(PipelineStepsMixin):
                 def on_parallel_stream(chunk, worker_id, _self=self):
                     _self._append_stream(chunk, worker_id)
 
+                self._set_stream_header(
+                    f"{stage.name} — {len(decomposed_tasks)} workers"
+                )
+                self._write_log(
+                    f"\n[bold yellow]▶ {stage.name}[/bold yellow] "
+                    f"[dim]({len(decomposed_tasks)} parallel workers)[/dim]"
+                )
                 output = await run_stage_parallel(
                     stage, decomposed_tasks, prompt, prev_output, self.working_dir,
-                    on_worker_start=lambda task: None,
                     on_worker_complete=on_worker_complete,
                     on_stream=on_parallel_stream,
                 )
-                pill.update_status(stage.status, stage.elapsed)
-                if stage.status == StageStatus.COMPLETED:
-                    self._write_log(
-                        f"[green]✓ {stage_name}[/green] — {StagePill._fmt(stage.elapsed)} "
-                        f"[dim]({len(decomposed_tasks)} workers)[/dim]"
-                    )
-                    self._stage_outputs[stage_name] = output
-                    prev_output = output
-                else:
-                    self._write_log(f"[red]✗ {stage_name} failed:[/red] {stage.error}")
-                    failed = True
-                    break
+            elif stage.kind == "commit_pr":
+                self._write_log(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
 
-            else:
-                self._write_log(f"\n[bold yellow]▶ {stage_name}[/bold yellow]")
+                def on_pr_log(msg, _self=self):
+                    _self._write_log(f"  [dim]{msg}[/dim]")
 
-                def on_rerun_stream(chunk, _self=self):
-                    _self._append_stream(chunk)
-
-                output = await run_stage(
-                    stage, prompt, prev_output, self.working_dir, on_stream=on_rerun_stream
+                output = await run_commit_pr_stage(
+                    stage, prompt, prev_output, self.working_dir,
+                    on_stream=on_stream, on_log=on_pr_log,
                 )
+            else:  # simple or gate (single pass on re-run)
+                self._write_log(f"\n[bold yellow]▶ {stage.name}[/bold yellow]")
+                output = await run_stage(
+                    stage, prompt, prev_output, self.working_dir, on_stream=on_stream
+                )
+
+            if pill is not None:
                 pill.update_status(stage.status, stage.elapsed)
-                if stage.status == StageStatus.COMPLETED:
-                    self._write_log(
-                        f"[green]✓ {stage_name}[/green] — {StagePill._fmt(stage.elapsed)}"
-                    )
-                    preview = output[:300].strip()
-                    if preview:
-                        self._write_log(f"[dim]{preview}[/dim]\n")
-                    self._stage_outputs[stage_name] = output
-                    prev_output = output
-                else:
-                    self._write_log(f"[red]✗ {stage_name} failed:[/red] {stage.error}")
-                    failed = True
-                    break
+            if stage.status == StageStatus.COMPLETED:
+                self._write_log(
+                    f"[green]✓ {stage.name}[/green] — {StagePill._fmt(stage.elapsed)}"
+                )
+                preview = output[:300].strip()
+                if preview and stage.kind != "commit_pr":
+                    self._write_log(f"[dim]{preview}[/dim]\n")
+                self._stage_outputs[stage.name] = output
+                prev_output = output
+            else:
+                self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
+                failed = True
+                break
 
         stats = pipeline_stats
         final_stats = (
