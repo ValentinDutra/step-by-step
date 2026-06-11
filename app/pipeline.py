@@ -1,6 +1,5 @@
 """Pipeline stage runners."""
 
-from app.claude import call_claude
 from app.models import Task
 from app.stages import Stage, StageStatus
 from app.workers import run_workers_parallel, aggregate_results
@@ -23,13 +22,13 @@ async def run_stage(
         iteration_context=iteration_context,
     )
 
-    success, output, _ = await call_claude(full_prompt, working_dir, on_stream=on_stream)
+    result = await stage.provider.run(full_prompt, working_dir, on_stream=on_stream)
 
-    if success:
-        stage.complete(output)
-        return output
+    if result.success:
+        stage.complete(result.output)
+        return result.output
     else:
-        stage.fail(output)
+        stage.fail(result.error or result.output)
         return ""
 
 
@@ -63,6 +62,7 @@ async def run_stage_parallel(
         tasks,
         worker_prompts,
         working_dir,
+        stage.provider,
         on_start=on_worker_start,
         on_complete=on_worker_complete,
         on_stream=on_stream,

@@ -3,7 +3,6 @@
 import asyncio
 import json
 
-from app.claude import call_claude
 from app.stages import Stage
 
 
@@ -32,9 +31,10 @@ async def _gh(working_dir: str, *args: str) -> tuple[int, str, str]:
 async def create_branch(
     prompt: str,
     working_dir: str,
+    provider,
     on_log=None,
 ) -> str:
-    """Ask Claude to pick a branch name based on the task and create it."""
+    """Ask the provider to pick a branch name based on the task and create it."""
     branch_prompt = (
         "Given the following task, output ONLY a git branch name — no explanation, no punctuation, nothing else.\n"
         "Rules:\n"
@@ -45,11 +45,11 @@ async def create_branch(
         f"TASK: {prompt}"
     )
 
-    success, output, _ = await call_claude(branch_prompt, working_dir)
-    if not success:
+    result = await provider.run(branch_prompt, working_dir)
+    if not result.success:
         return ""
 
-    branch_name = output.strip().strip("`").split("\n")[0].strip()
+    branch_name = result.output.strip().strip("`").split("\n")[0].strip()
 
     rc, _, err = await _git(working_dir, "checkout", "-b", branch_name)
     if rc != 0:
@@ -93,10 +93,11 @@ async def run_commit_pr_stage(
         diff_stat=diff_stat[:1500] if diff_stat else "No changes detected yet",
     )
 
-    success, conv_output, _ = await call_claude(conv_prompt, working_dir, on_stream=on_stream)
-    if not success:
-        stage.fail(f"Failed to generate commit info: {conv_output}")
+    conv_result = await stage.provider.run(conv_prompt, working_dir, on_stream=on_stream)
+    if not conv_result.success:
+        stage.fail(f"Failed to generate commit info: {conv_result.error or conv_result.output}")
         return ""
+    conv_output = conv_result.output
 
     try:
         text = conv_output.strip()

@@ -47,6 +47,8 @@ Worker concurrency is not capped by a fixed number. Instead, the pipeline uses T
 - **[uv](https://docs.astral.sh/uv/)** (recommended) or pip
 - **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** — `npm install -g @anthropic-ai/claude-code`
 - **[GitHub CLI](https://cli.github.com/)** — required for the Commit & PR stage (`gh auth login`)
+- **[Codex CLI](https://developers.openai.com/codex)** *(optional)* — `npm install -g @openai/codex`; only needed if a phase uses `provider = "codex"`
+- **[Gemini CLI](https://github.com/google-gemini/gemini-cli)** *(optional)* — `npm install -g @google/gemini-cli`; only needed if a phase uses `provider = "gemini"`
 
 ---
 
@@ -74,6 +76,34 @@ git clone https://github.com/ValentinDutra/step-by-step-cli.git
 cd step-by-step-cli
 uv sync
 ```
+
+---
+
+## Configuration
+
+By default every stage runs on Claude. To run specific phases on a different CLI, create a `step-by-step.toml`. Resolution order (first found wins): `--config PATH`, then `step-by-step.toml` in the target repo, then `~/.config/step-by-step/config.toml`. With no config, behavior is unchanged (all Claude).
+
+```toml
+[defaults]
+provider = "claude"        # claude | codex | gemini
+model = ""                 # empty = the CLI's default model
+
+[phases."Code Quality"]
+provider = "codex"
+model = "gpt-5.1-codex"
+
+[phases.Planning]
+provider = "gemini"
+model = "gemini-3.5-flash"
+```
+
+Phase names match the pipeline stages: `Planning`, `Decomposition`, `Implementation`, `Tests & Validation`, `Code Quality`, `Documentation`, `Commit & PR`. Any phase you do not list falls back to `[defaults]`. Models are passed through to the CLI as-is. An unknown provider or phase name aborts before the run with a clear message, and a missing provider CLI is reported before stage 1.
+
+Each provider handles its own authentication: `claude` (Claude Code login), `codex` (`codex login` or `OPENAI_API_KEY`), `gemini` (`gemini` login or `GEMINI_API_KEY`).
+
+### Safety
+
+The pipeline runs every provider fully autonomous — no sandbox, no approval prompts (`--dangerously-skip-permissions` for Claude, `--dangerously-bypass-approvals-and-sandbox` for Codex, `--yolo` for Gemini). With a multi-provider config that is up to three agents with full read/write/execute access to the target repository. Run it on a throwaway branch or an isolated clone.
 
 ---
 

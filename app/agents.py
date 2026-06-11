@@ -2,11 +2,10 @@
 
 import json
 
-from app.claude import call_claude
 from app.models import Task
 
 
-async def decompose_task(prompt: str, plan: str, working_dir: str) -> list[Task]:
+async def decompose_task(prompt: str, plan: str, working_dir: str, provider) -> list[Task]:
     """Manager agent: decompose a plan into independent parallel subtasks."""
     decompose_prompt = (
         "You are a task decomposition agent. Given a plan, break it into independent subtasks "
@@ -25,10 +24,11 @@ async def decompose_task(prompt: str, plan: str, working_dir: str) -> list[Task]
         "- Output ONLY the JSON array, no markdown fences or other text\n"
     )
 
-    success, output, _ = await call_claude(decompose_prompt, working_dir)
-    if not success:
+    result = await provider.run(decompose_prompt, working_dir)
+    if not result.success:
         return [Task(id=1, description=prompt)]
 
+    output = result.output
     try:
         text = output.strip()
         if text.startswith("```"):

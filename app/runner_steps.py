@@ -1,6 +1,6 @@
 """Pipeline step helpers: single-pass and looping impl+tests execution."""
 
-from app.claude import evaluate_should_iterate
+from app.evaluation import evaluate_should_iterate
 from app.pipeline import run_stage, run_stage_parallel
 from app.stages import StageStatus
 from app.widgets import RERUN_ORDER, StagePill
@@ -212,7 +212,9 @@ class PipelineStepsMixin:
                 return False, ""
 
             self._set_stream_header("Evaluating test results…")
-            should_loop = await evaluate_should_iterate(tests_output, self.working_dir)
+            should_loop = await evaluate_should_iterate(
+                tests_output, self.working_dir, self._default_provider
+            )
             if not should_loop:
                 self._write_log(
                     "\n[bold green]Tests passed — moving to quality review[/bold green]"

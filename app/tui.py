@@ -20,10 +20,11 @@ from app.widgets import StagePill, SystemMonitor
 class PipelineApp(PipelineRunnerMixin, App):
     """Multi-agent Dev Pipeline TUI."""
 
-    def __init__(self, working_dir: str = "", prompt_file: str = "", **kwargs):
+    def __init__(self, working_dir: str = "", prompt_file: str = "", config_path: str = "", **kwargs):
         import os
         self.working_dir = working_dir or os.getcwd()
         self.prompt_file = prompt_file
+        self.config_path = config_path
         super().__init__(**kwargs)
 
     TITLE = "Dev Pipeline — Multi-Agent"
@@ -88,7 +89,7 @@ class PipelineApp(PipelineRunnerMixin, App):
         stats_bar = self.query_one("#stats-bar", Label)
         stats = pipeline_stats
         stats_bar.update(
-            f"Calls: {stats.total_calls}  |  Cost: ${stats.total_cost_usd:.4f}  |  Time: {stats.format_elapsed()}"
+            f"Calls: {stats.total_calls}  |  Cost: {stats.format_cost()}  |  Time: {stats.format_elapsed()}"
         )
 
     def _refresh_monitor(self) -> None:
@@ -165,6 +166,7 @@ def main():
     parser = argparse.ArgumentParser(description="Dev Pipeline — Multi-agent LLM-powered development stages")
     parser.add_argument("repo", nargs="?", default=os.getcwd(), help="Path to the target repository (default: current directory)")
     parser.add_argument("-f", "--prompt-file", default="", metavar="FILE", help="Read prompt from FILE and start pipeline immediately")
+    parser.add_argument("--config", default="", metavar="PATH", help="Path to a step-by-step.toml provider config (overrides project/user config)")
     args = parser.parse_args()
 
     repo = os.path.abspath(os.path.expanduser(args.repo))
@@ -179,7 +181,14 @@ def main():
             print(f"Error: prompt file '{prompt_file}' not found")
             raise SystemExit(1)
 
-    app = PipelineApp(working_dir=repo, prompt_file=prompt_file)
+    config_path = ""
+    if args.config:
+        config_path = os.path.abspath(os.path.expanduser(args.config))
+        if not os.path.isfile(config_path):
+            print(f"Error: config file '{config_path}' not found")
+            raise SystemExit(1)
+
+    app = PipelineApp(working_dir=repo, prompt_file=prompt_file, config_path=config_path)
     app.run()
 
 

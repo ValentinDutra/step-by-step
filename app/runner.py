@@ -19,17 +19,47 @@ from textual import work
 from textual.widgets import Label, RichLog, TextArea
 
 from app.agents import decompose_task
-from app.claude import evaluate_should_iterate
+from app.evaluation import evaluate_should_iterate
 from app.git import create_branch, run_commit_pr_stage
+from app.config import load_config, resolve_providers, provider_for, preflight
 from app.models import Task, pipeline_stats
 from app.pipeline import run_stage, run_stage_parallel
 from app.runner_steps import PipelineStepsMixin
-from app.stages import StageStatus, create_stages
+from app.stages import STAGES, StageStatus, create_stages
 from app.widgets import RERUN_ORDER, STAGE_PREV, StagePill
 
 
 class PipelineRunnerMixin(PipelineStepsMixin):
     """Mixin providing run_pipeline and rerun_from_stage workers."""
+
+    def _resolve_providers(self):
+        """Load config and resolve (provider, model) per phase, plus the
+        ``[defaults]`` provider used by the quality-gate."""
+        config = load_config(self.working_dir, getattr(self, "config_path", ""))
+        phase_names = [s.name for s in STAGES]
+        resolved = resolve_providers(config, phase_names)
+        defaults = config.get("defaults", {})
+        default_provider = provider_for(
+            defaults.get("provider", "claude"), defaults.get("model", "")
+        )
+        return resolved, default_provider
+
+    def _resolve_or_report(self, stats_bar, prompt_input):
+        """Resolve providers, or report an invalid config to the UI and abort.
+
+        Returns ``(resolved, default_provider)`` on success, or ``None`` after
+        rendering the error (caller should return).
+        """
+        try:
+            return self._resolve_providers()
+        except ValueError as exc:
+            self._write_log(f"[red]✗ Config error:[/red] {exc}")
+            stats_bar.update("Config error")
+            stats_bar.remove_class("working")
+            stats_bar.add_class("error")
+            prompt_input.disabled = False
+            self.running = False
+            return None
 
     @work(exclusive=True)
     async def run_pipeline(self, prompt: str):
@@ -43,7 +73,23 @@ class PipelineRunnerMixin(PipelineStepsMixin):
 
         pipeline_stats.reset()
 
-        stages = create_stages()
+        resolved_pair = self._resolve_or_report(stats_bar, prompt_input)
+        if resolved_pair is None:
+            return
+        resolved, self._default_provider = resolved_pair
+
+        missing = preflight(resolved)
+        if missing:
+            for message in missing:
+                self._write_log(f"[red]✗ {message}[/red]")
+            stats_bar.update("Missing provider CLI")
+            stats_bar.remove_class("working")
+            stats_bar.add_class("error")
+            prompt_input.disabled = False
+            self.running = False
+            return
+
+        stages = create_stages(resolved)
         pills = list(self.query(StagePill))
         stage_map = {s.name: (i, s) for i, s in enumerate(stages)}
 
@@ -66,6 +112,7 @@ class PipelineRunnerMixin(PipelineStepsMixin):
         branch_name = await create_branch(
             prompt,
             self.working_dir,
+            stage_map["Commit & PR"][1].provider,
             on_log=lambda msg: self._write_log(f"  [dim]{msg}[/dim]"),
         )
         if branch_name:
@@ -118,7 +165,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             )
 
             decomp_stage.start()
-            decomposed_tasks = await decompose_task(prompt, plan_output, self.working_dir)
+            decomposed_tasks = await decompose_task(
+                prompt, plan_output, self.working_dir, decomp_stage.provider
+            )
             decomp_stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
             self._last_decomposed_tasks = decomposed_tasks
 
@@ -179,7 +228,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             self._stage_outputs["Code Quality"] = cq_output
 
             self._set_stream_header("Evaluating quality & technical debt…")
-            should_loop = await evaluate_should_iterate(cq_output, self.working_dir)
+            should_loop = await evaluate_should_iterate(
+                cq_output, self.working_dir, self._default_provider
+            )
             if not should_loop:
                 prev_output = cq_output
                 self._write_log(
@@ -216,7 +267,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             )
 
             d_stage.start()
-            decomposed_tasks = await decompose_task(prompt, decomp_context, self.working_dir)
+            decomposed_tasks = await decompose_task(
+                prompt, decomp_context, self.working_dir, d_stage.provider
+            )
             d_stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
             self._last_decomposed_tasks = decomposed_tasks
 
@@ -310,7 +363,7 @@ class PipelineRunnerMixin(PipelineStepsMixin):
         # ── Final status ─────────────────────────────────────────────────
         stats = pipeline_stats
         final_stats = (
-            f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} "
+            f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
             f"| Time: {stats.format_stage_time()}"
         )
 
@@ -357,7 +410,11 @@ class PipelineRunnerMixin(PipelineStepsMixin):
             else []
         )
 
-        fresh_stages = {s.name: s for s in create_stages()}
+        resolved_pair = self._resolve_or_report(stats_bar, prompt_input)
+        if resolved_pair is None:
+            return
+        resolved, self._default_provider = resolved_pair
+        fresh_stages = {s.name: s for s in create_stages(resolved)}
         failed = False
 
         self._write_log(
@@ -381,7 +438,9 @@ class PipelineRunnerMixin(PipelineStepsMixin):
                     f"[dim](manager splitting tasks)[/dim]"
                 )
                 stage.start()
-                decomposed_tasks = await decompose_task(prompt, prev_output, self.working_dir)
+                decomposed_tasks = await decompose_task(
+                    prompt, prev_output, self.working_dir, stage.provider
+                )
                 stage.complete(f"Decomposed into {len(decomposed_tasks)} subtasks")
                 self._last_decomposed_tasks = decomposed_tasks
                 pill.update_status(StageStatus.COMPLETED, stage.elapsed)
@@ -481,7 +540,7 @@ class PipelineRunnerMixin(PipelineStepsMixin):
 
         stats = pipeline_stats
         final_stats = (
-            f"Calls: {stats.total_calls} | Cost: ${stats.total_cost_usd:.4f} "
+            f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
             f"| Time: {stats.format_stage_time()}"
         )
 

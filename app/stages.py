@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from app.models import Task, pipeline_stats
+from app.providers.base import LLMProvider
+from app.providers.claude import ClaudeProvider
 import app.prompts as p
 
 
@@ -22,6 +24,9 @@ class Stage:
     iterable: bool = False
     parallel: bool = False
     worker_prompt_template: str = ""
+    provider: LLMProvider | None = None
+    provider_name: str = "claude"
+    model: str = ""
     status: StageStatus = StageStatus.PENDING
     elapsed: float = 0.0
     output: str = ""
@@ -58,15 +63,31 @@ STAGES = [
 ]
 
 
-def create_stages() -> list[Stage]:
-    """Create a fresh set of pipeline stages."""
-    return [
-        Stage(
-            name=s.name,
-            prompt_template=s.prompt_template,
-            iterable=s.iterable,
-            parallel=s.parallel,
-            worker_prompt_template=s.worker_prompt_template,
+def create_stages(
+    resolved: dict[str, tuple[LLMProvider, str]] | None = None
+) -> list[Stage]:
+    """Create a fresh set of pipeline stages.
+
+    ``resolved`` maps phase name -> (provider, model). Phases absent from it (or
+    when it is ``None``) default to Claude, preserving the original behavior.
+    """
+    stages = []
+    for s in STAGES:
+        if resolved and s.name in resolved:
+            provider, model = resolved[s.name]
+            provider_name = provider.name
+        else:
+            provider, model, provider_name = ClaudeProvider(), "", "claude"
+        stages.append(
+            Stage(
+                name=s.name,
+                prompt_template=s.prompt_template,
+                iterable=s.iterable,
+                parallel=s.parallel,
+                worker_prompt_template=s.worker_prompt_template,
+                provider=provider,
+                provider_name=provider_name,
+                model=model,
+            )
         )
-        for s in STAGES
-    ]
+    return stages
