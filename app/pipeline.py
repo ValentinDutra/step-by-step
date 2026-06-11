@@ -1,7 +1,8 @@
 """Pipeline stage runners."""
 
 from app.models import Task
-from app.stages import Stage, StageStatus
+from app.skills import render_prompt
+from app.stages import Stage
 from app.workers import run_workers_parallel, aggregate_results
 
 
@@ -16,10 +17,8 @@ async def run_stage(
     """Run a single pipeline stage (manager mode — single agent)."""
     stage.start()
 
-    full_prompt = stage.prompt_template.format(
-        prompt=prompt,
-        prev_output=prev_output[:8000],
-        iteration_context=iteration_context,
+    full_prompt = render_prompt(
+        stage.prompt_template, prompt, prev_output[:8000], iteration_context
     )
 
     result = await stage.provider.run(full_prompt, working_dir, on_stream=on_stream)

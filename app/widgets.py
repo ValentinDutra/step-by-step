@@ -21,28 +21,6 @@ STAGE_SHORT_NAMES = {
     "Commit & PR": "PR",
 }
 
-# Execution order of stages as they appear visually (pill index = list index).
-RERUN_ORDER = [
-    "Planning",
-    "Decomposition",
-    "Implementation",
-    "Tests & Validation",
-    "Code Quality",
-    "Documentation",
-    "Commit & PR",
-]
-
-# Which stage's output is used as prev_output when entering each stage.
-STAGE_PREV: dict[str, str | None] = {
-    "Planning": None,
-    "Decomposition": "Planning",
-    "Implementation": "Planning",
-    "Tests & Validation": "Implementation",
-    "Code Quality": "Tests & Validation",
-    "Documentation": "Code Quality",
-    "Commit & PR": "Documentation",
-}
-
 
 class StagePill(Static):
     """Rounded-box stage card for the horizontal pipeline bar."""

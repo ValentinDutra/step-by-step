@@ -27,6 +27,8 @@ class Stage:
     provider: LLMProvider | None = None
     provider_name: str = "claude"
     model: str = ""
+    kind: str = "simple"
+    max_iterations: int = 3
     status: StageStatus = StageStatus.PENDING
     elapsed: float = 0.0
     output: str = ""
@@ -50,16 +52,21 @@ class Stage:
         self.status = StageStatus.FAILED
 
 
+VALID_KINDS = {"simple", "decompose", "parallel", "gate", "commit_pr"}
+
+
 STAGES = [
-    Stage(name="Planning",          prompt_template=p.PLANNING),
-    Stage(name="Decomposition",     prompt_template=""),
+    Stage(name="Planning",          prompt_template=p.PLANNING, kind="simple"),
+    Stage(name="Decomposition",     prompt_template="", kind="decompose"),
     Stage(name="Implementation",    prompt_template=p.IMPLEMENTATION,
-          worker_prompt_template=p.IMPLEMENTATION_WORKER, iterable=True, parallel=True),
+          worker_prompt_template=p.IMPLEMENTATION_WORKER, iterable=True, parallel=True,
+          kind="parallel"),
     Stage(name="Tests & Validation", prompt_template=p.TESTS,
-          worker_prompt_template=p.TESTS_WORKER, iterable=True, parallel=True),
-    Stage(name="Code Quality",      prompt_template=p.CODE_QUALITY),
-    Stage(name="Documentation",     prompt_template=p.DOCUMENTATION),
-    Stage(name="Commit & PR",       prompt_template=p.COMMIT_PR),
+          worker_prompt_template=p.TESTS_WORKER, iterable=True, parallel=True,
+          kind="parallel"),
+    Stage(name="Code Quality",      prompt_template=p.CODE_QUALITY, kind="gate"),
+    Stage(name="Documentation",     prompt_template=p.DOCUMENTATION, kind="simple"),
+    Stage(name="Commit & PR",       prompt_template=p.COMMIT_PR, kind="commit_pr"),
 ]
 
 
@@ -88,6 +95,8 @@ def create_stages(
                 provider=provider,
                 provider_name=provider_name,
                 model=model,
+                kind=s.kind,
+                max_iterations=s.max_iterations,
             )
         )
     return stages
