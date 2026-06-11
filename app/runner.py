@@ -15,6 +15,8 @@ Requires the host class to define:
   - self.query(selector)
 """
 
+from enum import Enum, auto
+
 from textual import work
 from textual.widgets import Label, RichLog, TextArea
 
@@ -37,6 +39,12 @@ from app.pipeline import run_stage, run_stage_parallel
 from app.pipeline_graph import gate_loopback_target, rerun_order, stage_prev
 from app.stages import StageStatus
 from app.widgets import StagePill
+
+
+class RunOutcome(Enum):
+    COMPLETED = auto()
+    FAILED = auto()
+    STOPPED = auto()  # user checkpoint or cost cap — intentional, not an error
 
 
 class PipelineRunnerMixin:
@@ -161,11 +169,11 @@ class PipelineRunnerMixin:
             else:
                 self._write_log("[yellow]⚠ Branch creation skipped[/yellow]\n")
 
-        failed = await self._run_dispatch_loop(stages, pills, prompt, stats_bar)
+        outcome = await self._run_dispatch_loop(stages, pills, prompt, stats_bar)
 
         # ── Final status ─────────────────────────────────────────────────
         if self._artifacts is not None:
-            self._artifacts.finish(pipeline_stats, failed)
+            self._artifacts.finish(pipeline_stats, outcome is not RunOutcome.COMPLETED)
         stats = pipeline_stats
         final_stats = (
             f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
@@ -173,11 +181,14 @@ class PipelineRunnerMixin:
         )
 
         stats_bar.remove_class("working")
-        if not failed:
+        if outcome is RunOutcome.COMPLETED:
             stats_bar.add_class("success")
             stats_bar.update(f"✓ Done — {final_stats}")
             self._write_log("\n[bold green]All stages completed![/bold green]")
             self._set_stream_header(f"Done — {final_stats}")
+        elif outcome is RunOutcome.STOPPED:
+            stats_bar.update(f"⏹ Stopped — {final_stats}")
+            self._set_stream_header(f"Stopped — {final_stats}")
         else:
             stats_bar.add_class("error")
             stats_bar.update(f"✗ Failed — {final_stats}")
@@ -187,13 +198,12 @@ class PipelineRunnerMixin:
         for pill in self.query(StagePill):
             pill.add_class("pill-rerunnable")
 
-    async def _run_dispatch_loop(self, stages, pills, prompt, stats_bar) -> bool:
+    async def _run_dispatch_loop(self, stages, pills, prompt, stats_bar) -> RunOutcome:
         """Run the resolved pipeline, dispatching each stage by ``kind``.
 
-        Threads each stage's output to the next, re-runs a ``gate``'s loop-back
-        range (nearest preceding ``decompose`` .. gate) when it asks for another
-        iteration — capped by the gate's ``max_iterations`` — and returns
-        ``True`` if any stage failed.
+        Threads each stage's output to the next, and re-runs a ``gate``'s
+        loop-back range (nearest preceding ``decompose`` .. gate) when it asks
+        for another iteration — capped by the gate's ``max_iterations``.
         """
         outputs: list[str] = [""] * len(stages)
         decomposed_tasks: list[Task] = []
@@ -209,15 +219,11 @@ class PipelineRunnerMixin:
                     f"[red]✗ Cost cap reached: ${pipeline_stats.total_cost_usd:.4f} ≥ "
                     f"${self._limits.max_cost_usd:.2f} — stopping pipeline[/red]"
                 )
-                stats_bar.remove_class("working")
-                stats_bar.update("Cost cap reached")
-                return True
+                return RunOutcome.STOPPED
             if stage.name in self._confirm.phases:
                 if not await self._confirm_before(stage):
                     self._write_log(f"[yellow]Stopped by user before {stage.name}[/yellow]")
-                    stats_bar.remove_class("working")
-                    stats_bar.update("Stopped by user")
-                    return True
+                    return RunOutcome.STOPPED
             stage_cost_before = pipeline_stats.total_cost_usd
             pill = pills[index] if index < len(pills) else None
             prev_output = outputs[index - 1] if index > 0 else ""
@@ -268,9 +274,7 @@ class PipelineRunnerMixin:
                     )
                     if not selected_ids:
                         self._write_log("[yellow]Stopped by user at task review[/yellow]")
-                        stats_bar.remove_class("working")
-                        stats_bar.update("Stopped by user")
-                        return True
+                        return RunOutcome.STOPPED
                     excluded = [
                         task.id for task in decomposed_tasks if task.id not in selected_ids
                     ]
@@ -332,7 +336,7 @@ class PipelineRunnerMixin:
                 self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
                 stats_bar.remove_class("working")
                 stats_bar.update(f"Failed at: {stage.name}")
-                return True
+                return RunOutcome.FAILED
 
             outputs[index] = output
             self._stage_outputs[stage.name] = output
@@ -382,13 +386,11 @@ class PipelineRunnerMixin:
                     f"{stage.name} completed — continue?", output
                 ):
                     self._write_log(f"[yellow]Stopped by user after {stage.name}[/yellow]")
-                    stats_bar.remove_class("working")
-                    stats_bar.update("Stopped by user")
-                    return True
+                    return RunOutcome.STOPPED
 
             index += 1
 
-        return False
+        return RunOutcome.COMPLETED
 
     @work(exclusive=True)
     async def rerun_from_stage(self, from_stage_name: str) -> None:
@@ -445,7 +447,7 @@ class PipelineRunnerMixin:
             if first_decompose is not None and from_idx > first_decompose
             else []
         )
-        failed = False
+        outcome = RunOutcome.COMPLETED
         step_enabled = getattr(self, "step_mode", False) or self._confirm.step
 
         self._write_log(
@@ -460,13 +462,12 @@ class PipelineRunnerMixin:
                     f"[red]✗ Cost cap reached: ${pipeline_stats.total_cost_usd:.4f} ≥ "
                     f"${self._limits.max_cost_usd:.2f} — stopping pipeline[/red]"
                 )
-                failed = True
+                outcome = RunOutcome.STOPPED
                 break
             if stage.name in self._confirm.phases:
                 if not await self._confirm_before(stage):
                     self._write_log(f"[yellow]Stopped by user before {stage.name}[/yellow]")
-                    stats_bar.update("Stopped by user")
-                    failed = True
+                    outcome = RunOutcome.STOPPED
                     break
             stage_cost_before = pipeline_stats.total_cost_usd
             pill = pills[index] if index < len(pills) else None
@@ -509,7 +510,7 @@ class PipelineRunnerMixin:
                     )
                     if not selected_ids:
                         self._write_log("[yellow]Stopped by user at task review[/yellow]")
-                        failed = True
+                        outcome = RunOutcome.STOPPED
                         break
                     excluded = [
                         task.id for task in decomposed_tasks if task.id not in selected_ids
@@ -591,15 +592,15 @@ class PipelineRunnerMixin:
                         self._write_log(
                             f"[yellow]Stopped by user after {stage.name}[/yellow]"
                         )
-                        failed = True
+                        outcome = RunOutcome.STOPPED
                         break
             else:
                 self._write_log(f"[red]✗ {stage.name} failed:[/red] {stage.error}")
-                failed = True
+                outcome = RunOutcome.FAILED
                 break
 
         if self._artifacts is not None:
-            self._artifacts.finish(pipeline_stats, failed)
+            self._artifacts.finish(pipeline_stats, outcome is not RunOutcome.COMPLETED)
         stats = pipeline_stats
         final_stats = (
             f"Calls: {stats.total_calls} | Cost: {stats.format_cost()} "
@@ -607,11 +608,14 @@ class PipelineRunnerMixin:
         )
 
         stats_bar.remove_class("working")
-        if not failed:
+        if outcome is RunOutcome.COMPLETED:
             stats_bar.add_class("success")
             stats_bar.update(f"✓ Done — {final_stats}")
             self._write_log("\n[bold green]Re-run complete![/bold green]")
             self._set_stream_header(f"Done — {final_stats}")
+        elif outcome is RunOutcome.STOPPED:
+            stats_bar.update(f"⏹ Stopped — {final_stats}")
+            self._set_stream_header(f"Stopped — {final_stats}")
         else:
             stats_bar.add_class("error")
             stats_bar.update(f"✗ Failed — {final_stats}")

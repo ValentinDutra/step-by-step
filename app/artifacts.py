@@ -38,7 +38,12 @@ class RunArtifacts:
         return cls(run_dir)
 
     def record_stage(self, index: int, stage: Stage) -> None:
-        filename = f"{index + 1:02d}-{_slugify(stage.name)}.md"
+        base_name = f"{index + 1:02d}-{_slugify(stage.name)}"
+        path = self.run_dir / f"{base_name}.md"
+        attempt = 2
+        while path.exists():
+            path = self.run_dir / f"{base_name}-{attempt}.md"
+            attempt += 1
         header = (
             f"# {stage.name}\n\n"
             f"- provider: {stage.provider_name}\n"
@@ -47,7 +52,7 @@ class RunArtifacts:
             f"- elapsed: {stage.elapsed:.1f}s\n\n"
         )
         body = stage.output or stage.error or ""
-        (self.run_dir / filename).write_text(header + body)
+        path.write_text(header + body)
 
     def finish(self, stats: PipelineStats, failed: bool) -> None:
         payload = {

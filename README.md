@@ -213,7 +213,7 @@ enabled = true               # default: false
 dir = ".step-by-step/runs"   # relative to the target repo (default)
 ```
 
-Each run writes `<repo>/.step-by-step/runs/<timestamp>/` containing `prompt.txt`, one `NN-<stage>.md` per stage (provider, model, status, elapsed, full output or error), and `run.json` (calls, cost, stage time, failed). Add `.step-by-step/runs/` to the target repo's `.gitignore`.
+Each run writes `<repo>/.step-by-step/runs/<timestamp>/` containing `prompt.txt`, one `NN-<stage>.md` per stage (provider, model, status, elapsed, full output or error; gate re-runs of a stage append `-2`, `-3`…), and `run.json` (calls, cost, stage time, failed). Add `.step-by-step/runs/` to the target repo's `.gitignore`.
 
 ### Safety
 

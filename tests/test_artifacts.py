@@ -42,6 +42,19 @@ def test_failed_stage_records_error(tmp_path):
     assert "status: failed" in content
 
 
+def test_gate_rerun_records_each_attempt(tmp_path):
+    artifacts = RunArtifacts.start(str(tmp_path), "runs", "p")
+    stage = Stage(name="Implementation", prompt_template="")
+    stage.start()
+    stage.complete("attempt one")
+    artifacts.record_stage(2, stage)
+    stage.start()
+    stage.complete("attempt two")
+    artifacts.record_stage(2, stage)
+    assert "attempt one" in (artifacts.run_dir / "03-implementation.md").read_text()
+    assert "attempt two" in (artifacts.run_dir / "03-implementation-2.md").read_text()
+
+
 def test_start_is_collision_safe(tmp_path, monkeypatch):
     real_datetime = artifacts_module.datetime
 
