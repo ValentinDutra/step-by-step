@@ -11,6 +11,7 @@ from textual.css.query import NoMatches
 from textual.reactive import var
 from textual.widgets import Header, Label, RichLog, Static, TextArea
 
+from app.config import load_config, resolve_pipeline
 from app.models import pipeline_stats
 from app.runner import PipelineRunnerMixin
 from app.stages import StageStatus, create_stages
@@ -45,12 +46,25 @@ class PipelineApp(PipelineRunnerMixin, App):
 
     running = var(False)
 
+    def _pipeline_stages(self):
+        """Resolve the configured pipeline for display, falling back to the
+        built-in phases when the config is invalid (the runner reports the real
+        error when the user runs the pipeline)."""
+        try:
+            return resolve_pipeline(
+                load_config(self.working_dir, self.config_path), self.working_dir
+            )
+        except ValueError:
+            return create_stages()
+
     def compose(self) -> ComposeResult:
         yield Header()
-        stages = create_stages()
+        stages = self._pipeline_stages()
         with HorizontalScroll(id="stage-bar"):
             for i, stage in enumerate(stages):
-                yield StagePill(stage.name, i, is_parallel=stage.parallel, classes="pill")
+                yield StagePill(
+                    stage.name, i, is_parallel=stage.kind == "parallel", classes="pill"
+                )
                 if i < len(stages) - 1:
                     yield Label("──●──", classes="pill-sep")
         yield Label(f"  {self.working_dir}", id="repo-label")
