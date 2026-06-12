@@ -1,6 +1,6 @@
 # Step-by-Step
 
-A terminal UI that runs your development tasks through a structured multi-agent pipeline. You describe what you want to build; a team of specialized Claude agents plans, implements, tests, reviews, and opens a pull request — autonomously.
+A terminal UI that runs your development tasks through a structured multi-agent pipeline. You describe what you want to build; a team of specialized LLM agents — Claude by default, Codex or Gemini per phase — plans, implements, tests, reviews, and opens a pull request, autonomously.
 
 ![Step-by-Step in action](assets/screenshot.png)
 
@@ -30,7 +30,7 @@ Plan ──● Decomp ──● Impl ⇶ ──● Tests ⇶ ──● Quality �
 
 ### Refinement loops
 
-Claude drives two autonomous feedback loops — it decides when to stop by reporting `## Issues Found: None`.
+The pipeline drives two autonomous feedback loops — the agents decide when to stop by reporting `## Issues Found: None`.
 
 - **Test loop** — cycles through Implementation → Tests & Validation until no issues remain
 - **Quality loop** — re-decomposes and re-implements until Code Quality is satisfied
@@ -294,7 +294,7 @@ Once a run completes, every stage pill in the header becomes clickable. Click an
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Plan  │  Decomp  │  Impl ⇶  │  Tests ⇶  │  Quality  │  PR    │  ← stage bar
+│  Plan  │  Decomp  │  Impl ⇶  │  Tests ⇶  │  Quality  │  Docs  │  PR  │  ← stage bar
 ├─────────────────────────────────────────────────────────────────┤
 │  > Describe your task…                                          │  ← prompt input
 ├──────────────────────────────┬──────────────────────────────────┤
