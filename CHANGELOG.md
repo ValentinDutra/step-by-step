@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Per-provider autonomy flags** — `skip_permissions = false` omits `--dangerously-skip-permissions` / `--dangerously-bypass-approvals-and-sandbox` / `--yolo`, and `extra_args` appends raw CLI arguments; both in `[defaults]` or per phase.
 - **Ctrl+X** cancels the running pipeline, killing provider subprocesses and leaving every stage re-runnable.
 - **CI** — GitHub Actions runs the test suite on every push to `main` and every pull request (#21).
+- **CD** — a push to `main` with a new `version` in `pyproject.toml` (major, minor, or patch) runs the tests, publishes to PyPI, and creates the matching `vX.Y.Z` GitHub Release with that version's changelog section as notes.
 
 ### Changed
 
