@@ -26,10 +26,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The final status distinguishes intentional stops (`⏹ Stopped` — user checkpoint or cost cap) from real failures (`✗ Failed`).
 - With no new config keys, behavior is identical to 0.1.x: every new default equals the previous hardcoded value, and confirmations/artifacts are off by default.
 
+### Removed
+
+- The npm wrapper package. It only delegated to `uvx`/`pipx`, so it required a Python package runner anyway; install from PyPI via `uvx`, `pipx`, or `pip` instead. The package published on the npm registry stays at 0.1.2.
+
 ### Fixed
 
 - Confirmation-modal bodies and task-review checkbox labels render raw LLM/git output literally; bracketed text such as `list[int]` is no longer swallowed as style markup.
-- `pyproject.toml` and `npm/package.json` versions are synced (both 0.2.0) and guarded by a test.
 
 ## [0.1.2] - 2026-03-18
 

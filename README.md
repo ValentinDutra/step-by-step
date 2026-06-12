@@ -64,12 +64,7 @@ The pipeline is autonomous by default, but every expensive decision can be bound
 
 ## Installation
 
-**Via npm (recommended):**
-```bash
-npm install -g step-by-step-cli
-```
-
-**Via uv:**
+**Via uv (recommended):**
 ```bash
 uvx --from step-by-step-cli pipeline
 ```
@@ -246,7 +241,7 @@ With `skip_permissions = false` the provider CLI falls back to its own approval 
 
 ## Usage
 
-**npm / pip install:**
+**pip install:**
 ```bash
 # Run against the current directory
 pipeline
