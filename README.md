@@ -88,6 +88,22 @@ uv sync
 
 By default every stage runs on Claude. To run specific phases on a different CLI, create a `step-by-step.toml`. Resolution order (first found wins): `--config PATH`, then `step-by-step.toml` in the target repo, then `~/.config/step-by-step/config.toml`. With no config, behavior is unchanged (all Claude).
 
+Everything is configurable per phase with a fallback to `[defaults]`. Quick reference:
+
+| Key | What it does | Details |
+|---|---|---|
+| `pipeline = [...]` | Reorder phases, drop built-ins, add custom prompt-only phases | [Customizing the pipeline](#customizing-the-pipeline) |
+| `provider`, `model` | Which CLI (`claude` / `codex` / `gemini`) and which LLM runs a phase — in `[defaults]` or `[phases.X]` | this section |
+| `skill` / `prompt` | Replace a phase's built-in prompt with a `SKILL.md` folder or an inline string | [Customizing the pipeline](#customizing-the-pipeline) |
+| `max_iterations` | Cap a gate phase's re-run loop | [Customizing the pipeline](#customizing-the-pipeline) |
+| `eval_prompt` / `eval_skill` | Replace the quality-gate evaluator's prompt | [Overriding the internal prompts](#overriding-the-internal-prompts) |
+| `skip_permissions`, `extra_args` | Provider autonomy flags and raw CLI arguments — in `[defaults]` or `[phases.X]` | [Safety](#safety) |
+| `[limits]` | Timeout, RAM threshold, cost cap, context truncation sizes | [Limits](#limits) |
+| `[confirm]` | Checkpoints: pause before phases, review subtasks, step mode | [Confirmations](#confirmations) |
+| `[artifacts]` | Persist each run's prompt, stage outputs, and stats to disk | [Run artifacts](#run-artifacts) |
+
+Validate the result without spending anything: `pipeline --check` prints the resolved pipeline (phase, kind, provider, model, prompt source), the effective limits, and the provider preflight.
+
 ```toml
 [defaults]
 provider = "claude"        # claude | codex | gemini
